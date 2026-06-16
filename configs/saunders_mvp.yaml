@@ -1,0 +1,10 @@
+adapter: saunders
+adapter_kwargs:
+  directory: /home/yiru/database/spatial_perturbed_processed/CRISPR_based/Saunders_2025_40513557
+  max_files: 4
+perturbations: null
+k: 15
+k_ref: 5
+gcn_kwargs:
+  hidden: 64
+  epochs: 30
