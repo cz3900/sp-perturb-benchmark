@@ -12,9 +12,13 @@ def attribute(grid: dict) -> dict:
 
 
 def leakage_pass(grid: dict, floor: float = 1e-3) -> bool:
-    """Cell (2) = GT seed + learned propagation. If it is ~0 the learned model is likely
-    copying the neighbour truth (leakage)."""
-    return grid["2"]["energy_prop"] >= floor
+    """A propagation prediction that reproduces the observed niche (energy ~0) indicates leakage.
+    Check both GT-seed cells: (1) baseline+GT seed and (2) learned+GT seed. Either being ~0 means
+    propagation started from the observed niche rather than a control reference. Missing cells
+    default to inf (pass), so a partial grid like {"2": ...} still works for unit tests."""
+    e1 = grid.get("1", {}).get("energy_prop", float("inf"))
+    e2 = grid.get("2", {}).get("energy_prop", float("inf"))
+    return e1 >= floor and e2 >= floor
 
 
 def rho_niche_gate(rho_with: float, rho_without: float, margin: float = 0.10) -> bool:
