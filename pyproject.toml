@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sp-perturb-benchmark"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy", "scipy", "scikit-learn", "h5py",
+    "torch", "matplotlib", "pyyaml",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["spbench*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
