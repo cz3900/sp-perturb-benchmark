@@ -17,5 +17,28 @@ def build_knn_graph(data, k: int = 15) -> np.ndarray:
                 dst_all.append(idx[local_j])
     return np.array([src_all, dst_all], dtype=int)
 
+_NBR_CACHE = {}
+
+
+def _neighbor_index(edges: np.ndarray):
+    """CSR-style src->dst index, built once per edges array (O(degree) lookups instead of
+    scanning all edges per node). Stable sort preserves original neighbour order."""
+    cached = _NBR_CACHE.get(id(edges))
+    if cached is not None and cached[0] is edges:
+        return cached[1], cached[2]
+    if edges.shape[1] == 0:
+        indptr, dst = np.zeros(1, dtype=int), edges[1]
+    else:
+        order = np.argsort(edges[0], kind="stable")
+        src_sorted, dst = edges[0][order], edges[1][order]
+        n = int(edges[0].max()) + 1
+        indptr = np.searchsorted(src_sorted, np.arange(n + 1))
+    _NBR_CACHE[id(edges)] = (edges, indptr, dst)
+    return indptr, dst
+
+
 def neighbors_of(node: int, edges: np.ndarray) -> np.ndarray:
-    return edges[1][edges[0] == node]
+    indptr, dst = _neighbor_index(edges)
+    if node + 1 >= len(indptr):
+        return dst[len(dst):]
+    return dst[indptr[node]:indptr[node + 1]]

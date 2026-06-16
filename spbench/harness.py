@@ -23,7 +23,7 @@ def _control_reference(data):
             X_ref[data.cell_type == ct] = data.X[m].mean(0)
     return X_ref
 
-def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop, k_ref=5):
+def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop, k_ref=5, X_ref=None):
     """Fill the seed×propagation 2×2 for one perturbation.
     Rows = {GT seed, Model seed}, Cols = {baseline prop, learned prop}.
     Each cell scores propagation E-distance vs the observed perturbed-niche distribution."""
@@ -33,7 +33,8 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
     observed = gt["perturbed_niche"]
 
     refs = match_reference_centers(data, centers, k=k_ref)
-    X_ref = _control_reference(data)   # propagation starts from the control niche, NOT the observed one
+    if X_ref is None:
+        X_ref = _control_reference(data)   # propagation starts from the control niche, NOT the observed one
 
     def collect(use_gt_seed, prop_model):
         preds = []
