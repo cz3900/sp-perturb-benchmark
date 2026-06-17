@@ -13,8 +13,9 @@ md("# Spatial perturbation benchmark — LOCAL synthetic run\n"
 code("%matplotlib inline\n"
      "from spbench.synthetic import make_synthetic\n"
      "from spbench.config import run_benchmark\n"
-     "from spbench.viz import (plot_2x2, plot_baseline_gain, plot_gain_per_perturbation,\n"
-     "                         plot_significance_contrast, plot_learned_value)")
+     "from spbench.viz import (plot_2x2, plot_aggregate_2x2, plot_baseline_gain,\n"
+     "                         plot_gain_per_perturbation, plot_significance_contrast,\n"
+     "                         plot_learned_value)")
 md("## 1. Generate synthetic data (planted seed + propagation effects)")
 code("data = make_synthetic(seed=0)\n"
      "print('cells', data.n_cells, '| genes', data.n_genes,\n"
@@ -42,6 +43,7 @@ md("## 4. Result figures\n"
    "colours; on real data pass the MC-spatial significant list.")
 code("SIGNIFICANT = PERTS[:2]   # demo only; on real data use the MC-spatial significant list\n"
      "plot_baseline_gain(res)                        # headline: each method vs the baseline")
+code("plot_aggregate_2x2(res)                        # summary 2x2: mean gain over baseline")
 code("plot_gain_per_perturbation(res, SIGNIFICANT)   # per gene: deployable model vs baseline")
 code("plot_significance_contrast(res, SIGNIFICANT)   # is the GCN-vs-Gaussian edge signal-specific?")
 code("plot_learned_value(res, SIGNIFICANT)           # learned_value (e1-e2) per perturbation")

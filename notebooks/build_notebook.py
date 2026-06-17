@@ -78,8 +78,9 @@ md("## 1. Imports")
 code("import matplotlib\n%matplotlib inline\n"
      "from spbench.adapters import get_adapter\n"
      "from spbench.config import run_benchmark\n"
-     "from spbench.viz import (plot_2x2, plot_baseline_gain, plot_gain_per_perturbation,\n"
-     "                         plot_learned_value, plot_significance_contrast)\n"
+     "from spbench.viz import (plot_2x2, plot_aggregate_2x2, plot_baseline_gain,\n"
+     "                         plot_gain_per_perturbation, plot_learned_value,\n"
+     "                         plot_significance_contrast)\n"
      "import numpy as np, pandas as pd")
 
 md("## 2. Load the data\n"
@@ -147,6 +148,15 @@ md("### Headline — each method vs the no-effect baseline\n"
    "The dashed line is the **oracle ceiling** (best a non-leaking model could reach). One glance: "
    "does any method beat doing nothing, by how much, and how far from the ceiling.")
 code("plot_baseline_gain(res).savefig('fig_gain_aggregate.png', dpi=140); None")
+
+md("### Summary 2×2 — mean gain over baseline\n"
+   "All perturbations collapsed into one grid: each cell is the per-gene `gain = e_null − e` "
+   "**averaged** across genes (so it is normalised to each gene's own baseline). **Green/>0 beats "
+   "'no effect', red/<0 loses.** The **column difference** is the mean learned_value (learned vs "
+   "Gaussian prop), the **row difference** is the mean seed_cost. Each cell also shows how many of "
+   "the N perturbations individually beat the baseline — read this together with the spread in the "
+   "headline box plot, since a single mean can hide a half-win/half-lose split.")
+code("plot_aggregate_2x2(res).savefig('fig_aggregate_2x2.png', dpi=140); None")
 
 md("### Per gene — deployable model vs baseline\n"
    "`gain = e_null − e[model+learned]` for every perturbation, sorted, coloured by significance. "

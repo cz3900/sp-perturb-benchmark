@@ -158,6 +158,39 @@ def plot_baseline_gain(res, title="Each method vs the no-effect baseline (all pe
     fig.tight_layout()
     return fig
 
+def plot_aggregate_2x2(res, title="Mean gain over the no-effect baseline (all perturbations)"):
+    """One summary 2x2: each cell is the per-gene gain (= e_null - e) averaged across all
+    perturbations, so it is normalised to each gene's own baseline (0 = no better than 'no
+    effect'; >0 beats it). The COLUMN difference is the mean learned_value (learned vs Gaussian
+    propagation), the ROW difference is the mean seed_cost — baseline anchoring and the 2x2
+    internal contrasts in one grid. Cells also show how many of N perturbations individually beat
+    the baseline (gain>0). A companion to plot_baseline_gain, which shows the full spread."""
+    cmp = res.get("compare", {})
+    perts = [p for p in cmp if cmp[p].get("gain")]
+    cells = {"1": "GT+base", "2": "GT+learned", "3": "model+base", "4": "model+learned"}
+    def col(k):
+        return [cmp[p]["gain"][cells[k]] for p in perts if cells[k] in cmp[p]["gain"]]
+    M = np.array([[np.nanmean(col("1")), np.nanmean(col("2"))],
+                  [np.nanmean(col("3")), np.nanmean(col("4"))]])
+    nbeat = {k: sum(v > 0 for v in col(k)) for k in cells}
+    N = len(perts)
+    vmax = float(np.nanmax(np.abs(M))) or 1.0
+    fig, ax = plt.subplots(figsize=(4.8, 3.8))
+    im = ax.imshow(M, cmap="RdYlGn", vmin=-vmax, vmax=vmax)   # red<0 (loses to baseline), green>0
+    ax.set_xticks([0, 1], ["baseline prop", "learned prop"])
+    ax.set_yticks([0, 1], ["GT seed", "model seed"])
+    order = [["1", "2"], ["3", "4"]]
+    for i in range(2):
+        for j in range(2):
+            k = order[i][j]
+            ax.text(j, i, f"{M[i, j]:+.3f}\n{nbeat[k]}/{N} beat", ha="center", va="center",
+                    fontsize=10, fontweight="bold")
+    ax.set_title(f"{title}\n>0 (green) beats baseline; col diff = learned value, row diff = seed cost",
+                 fontsize=9)
+    fig.colorbar(im, ax=ax, shrink=0.8, label="mean gain (e_null − e)")
+    fig.tight_layout()
+    return fig
+
 def plot_gain_per_perturbation(res, significant=None, method="model+learned",
                                title="Deployable model vs baseline, per perturbation"):
     """DETAIL — horizontal bars of gain = e_null - e for the deployable method, one per
