@@ -12,7 +12,8 @@ code("import matplotlib\n%matplotlib inline\n"
      "from spbench.adapters import get_adapter\n"
      "from spbench.config import run_benchmark\n"
      "from spbench.viz import (plot_2x2, plot_attribution, plot_learned_value,\n"
-     "                         plot_significance_contrast, plot_slope, plot_seed_vs_learned)\n"
+     "                         plot_significance_contrast, plot_slope, plot_seed_vs_learned,\n"
+     "                         plot_skill_leaderboard)\n"
      "import numpy as np, pandas as pd")
 md("## 1. Load data via adapter (swap adapter/path here to change dataset)")
 code("DIR='/home/yiru/database/spatial_perturbed_processed/CRISPR_based/Saunders_2025_40513557'\n"
@@ -50,6 +51,11 @@ md("## 5. Result figures\n"
    "Absolute E-distance is background-dominated (~6); the signal is in the **differences**. "
    "These figures plot the differences across perturbations and contrast significant vs "
    "non-significant — that is what reveals whether learned propagation captures real signal.")
+md("**Headline — skill leaderboard:** absolute E-distance turned into a 0..100% skill "
+   "(fraction of recoverable niche signal captured) via `calibrate_edistance`. Only "
+   "perturbations whose perturbed niche sits clearly above the noise floor are shown; the rest "
+   "are dropped (no signal to predict). <0 = worse than predicting 'no effect'.")
+code("plot_skill_leaderboard(res).savefig('fig_skill_leaderboard.png', dpi=140)")
 md("**B — the headline:** learned_value distribution, significant vs non-significant "
    "(box + points + sign-test). If the significant group is not clearly higher, the GCN's gain "
    "is generic (a better niche smoother), not signal-specific.")

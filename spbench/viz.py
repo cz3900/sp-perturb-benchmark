@@ -117,6 +117,34 @@ def plot_slope(res, significant=None, title="Baseline -> learned, per perturbati
     fig.tight_layout()
     return fig
 
+def plot_skill_leaderboard(res, title="Propagation skill — fraction of recoverable signal captured"):
+    """Headline figure: per-perturbation 0..100% skill for the two deployable models (Gaussian
+    baseline vs learned GCN), shown only for perturbations with real signal. skill 0 = no better
+    than predicting 'no effect' (the control niche); 100 = perfect (at the noise floor).
+    Needs res['skill'] from run_benchmark(..., compute_skill=True)."""
+    skill = res.get("skill", {})
+    items = [(p, skill[p]) for p in skill if skill[p].get("has_signal")]
+    dropped = [p for p in skill if not skill[p].get("has_signal")]
+    items.sort(key=lambda t: (t[1].get("learned") if t[1].get("learned") == t[1].get("learned") else -1))
+    fig, ax = plt.subplots(figsize=(7, max(3, 0.4 * len(items) + 1)))
+    clip = lambda v: float("nan") if v != v else max(-100.0, min(100.0, 100 * v))
+    if items:
+        names = [p for p, _ in items]
+        y = np.arange(len(names))
+        base = [clip(items[i][1]["baseline"]) for i in range(len(items))]
+        lrn = [clip(items[i][1]["learned"]) for i in range(len(items))]
+        ax.barh(y - 0.2, base, 0.4, color=_NON, label="Gaussian baseline")
+        ax.barh(y + 0.2, lrn, 0.4, color=_SIG, label="learned GCN")
+        ax.set_yticks(y, names)
+        ax.set_xlim(-105, 105)
+        ax.legend(loc="lower right", fontsize=9)
+    ax.axvline(0, color="k", lw=0.8)
+    ax.set_xlabel("skill (%)  [clipped to ±100]   <0 = worse than 'no effect',  100 = perfect")
+    note = (f"   ({len(dropped)} of {len(skill)} dropped: no reliable signal)") if dropped else ""
+    ax.set_title(f"{title}\n{len(items)} perturbations with signal{note}", fontsize=11)
+    fig.tight_layout()
+    return fig
+
 def plot_seed_vs_learned(res, significant=None, title="Attribution: seed cost vs learned value"):
     """Figure D (optional) — scatter of seed_cost (x) vs learned_value (y), one point per
     perturbation, coloured by significance. Shows the error is mostly on the propagation

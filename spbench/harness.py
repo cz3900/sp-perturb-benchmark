@@ -23,10 +23,14 @@ def _control_reference(data):
             X_ref[data.cell_type == ct] = data.X[m].mean(0)
     return X_ref
 
-def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop, k_ref=5, X_ref=None):
+def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop, k_ref=5,
+             X_ref=None, return_niches=False):
     """Fill the seed×propagation 2×2 for one perturbation.
     Rows = {GT seed, Model seed}, Cols = {baseline prop, learned prop}.
-    Each cell scores propagation E-distance vs the observed perturbed-niche distribution."""
+    Each cell scores propagation E-distance vs the observed perturbed-niche distribution.
+    With return_niches=True the grid also carries `_niches` = {observed, reference, "3", "4"}
+    (the predicted bystander-niche arrays for the two deployable models) so skill scores can be
+    computed downstream via spbench.calibrate."""
     energy = get_metric("energy")
     centers = np.where(data.perturbation == perturbation)[0]
     gt = propagation_gt(data, perturbation, edges, k_ref=k_ref)
@@ -56,4 +60,8 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
         "3": collect(False, baseline_prop),
         "4": collect(False, learned_prop),
     }
-    return {k: {"energy_prop": energy.compute(v, observed)} for k, v in cells.items()}
+    grid = {k: {"energy_prop": energy.compute(v, observed)} for k, v in cells.items()}
+    if return_niches:
+        grid["_niches"] = {"observed": observed, "reference": gt["reference_niche"],
+                           "3": cells["3"], "4": cells["4"]}
+    return grid

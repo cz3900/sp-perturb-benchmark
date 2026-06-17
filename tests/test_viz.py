@@ -1,7 +1,8 @@
 import matplotlib
 matplotlib.use("Agg")
 from spbench.viz import (plot_2x2, plot_attribution, plot_learned_value,
-                         plot_significance_contrast, plot_slope, plot_seed_vs_learned)
+                         plot_significance_contrast, plot_slope, plot_seed_vs_learned,
+                         plot_skill_leaderboard)
 from spbench.config import run_benchmark
 from spbench.synthetic import make_synthetic
 
@@ -21,3 +22,11 @@ def test_result_figures_return_figures():
     assert plot_significance_contrast(res, significant) is not None
     assert plot_slope(res, significant) is not None
     assert plot_seed_vs_learned(res, significant) is not None
+
+def test_skill_leaderboard():
+    # compute_skill=True attaches a 0..1 skill per perturbation; synthetic data has real signal
+    res = run_benchmark(make_synthetic(0), perturbations=["P0", "P1", "P2"], k=8,
+                        gcn_kwargs={"hidden": 16, "epochs": 5}, compute_skill=True, progress=False)
+    assert "skill" in res
+    assert all(k in res["skill"]["P0"] for k in ("has_signal", "baseline", "learned"))
+    assert plot_skill_leaderboard(res) is not None

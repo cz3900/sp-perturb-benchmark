@@ -14,7 +14,8 @@ code("%matplotlib inline\n"
      "from spbench.synthetic import make_synthetic\n"
      "from spbench.config import run_benchmark\n"
      "from spbench.viz import (plot_2x2, plot_attribution, plot_learned_value,\n"
-     "                         plot_significance_contrast, plot_slope, plot_seed_vs_learned)")
+     "                         plot_significance_contrast, plot_slope, plot_seed_vs_learned,\n"
+     "                         plot_skill_leaderboard)")
 md("## 1. Generate synthetic data (planted seed + propagation effects)")
 code("data = make_synthetic(seed=0)\n"
      "print('cells', data.n_cells, '| genes', data.n_genes,\n"
@@ -39,7 +40,8 @@ md("## 4. Result figures\n"
    "significant, so here we mark a subset just to demonstrate the figures; on real data pass "
    "the MC-spatial significant list.")
 code("SIGNIFICANT = PERTS[:2]   # demo only; on real data use the MC-spatial significant list\n"
-     "plot_significance_contrast(res, SIGNIFICANT)   # B: the headline contrast")
+     "plot_skill_leaderboard(res)                    # headline: 0..100% signal captured")
+code("plot_significance_contrast(res, SIGNIFICANT)   # B: the headline contrast")
 code("plot_learned_value(res, SIGNIFICANT)           # A: learned_value per perturbation, sorted")
 code("plot_slope(res, SIGNIFICANT)                   # C: baseline -> learned, consistency + outliers")
 code("plot_seed_vs_learned(res, SIGNIFICANT)         # D: where the error lives")
