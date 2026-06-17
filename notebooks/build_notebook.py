@@ -20,14 +20,19 @@ code("DIR='/home/yiru/database/spatial_perturbed_processed/CRISPR_based/Saunders
      "print(data.n_cells, data.n_genes, 'perturbations:', len(data.perturbations()))")
 md("## 2. Define the evaluation set\n"
    "`SIGNIFICANT` = the perturbations MC-spatial flagged as having real spatial effects "
-   "(p<0.05). `NON_SIGNIFICANT` = negative controls (screen-tested, not significant) — used to "
-   "check the learned model does not just help everywhere regardless of signal.")
+   "(p<0.05). `NON_SIGNIFICANT` = a random sample of the *same size* drawn from every other "
+   "perturbation (a proxy negative-control group — the vast majority have no real spatial "
+   "signal). This balanced contrast checks the learned model does not just help everywhere "
+   "regardless of signal.")
 code("SIGNIFICANT = ['Pck1','Rrbp1','Hspd1','Psmc1','Sepp1','Bcl2l1','Vcp',\n"
      "               'Ass1','Pten','Rrn3','Letm1','Hspa5','Sec61b','Rngtt']\n"
-     "# replace with screen-tested non-significant perturbations (Mtbp/Qars were just above 0.05):\n"
-     "NON_SIGNIFICANT = ['Mtbp','Qars']\n"
-     "EVAL = [p for p in SIGNIFICANT + NON_SIGNIFICANT if p in set(data.perturbations())]\n"
-     "print('evaluating', len(EVAL), 'perturbations')")
+     "sig = [p for p in SIGNIFICANT if p in set(data.perturbations())]\n"
+     "others = [p for p in data.perturbations() if p not in set(SIGNIFICANT)]\n"
+     "rng = np.random.default_rng(0)   # fixed seed for reproducibility\n"
+     "NON_SIGNIFICANT = list(rng.choice(others, size=min(len(sig), len(others)), replace=False))\n"
+     "EVAL = sig + NON_SIGNIFICANT\n"
+     "print('evaluating', len(EVAL), '=', len(sig), 'significant +',\n"
+     "      len(NON_SIGNIFICANT), 'random non-significant')")
 md("## 3. Run the benchmark (trivial seed + Gaussian baseline + GCN)")
 code("res = run_benchmark(data, perturbations=EVAL, k=15, k_ref=5,\n"
      "                    gcn_kwargs={'hidden':64,'epochs':30})")
