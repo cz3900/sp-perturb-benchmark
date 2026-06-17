@@ -55,15 +55,19 @@ def noise_floor(observed, n, repeats=20, seed=0):
     return float(np.nanmean(vals)), float(np.nanstd(vals))
 
 
-def calibrate_edistance(observed, reference, n=None, repeats=20, seed=0, z=2.0, max_n=300):
+def calibrate_edistance(observed, reference, n=None, repeats=20, seed=0, z=2.0, max_n=300,
+                        min_rel=0.0):
     """Calibrate one perturbation's propagation E-distance scale.
 
     observed  : observed perturbed-niche cells (the ground-truth distribution)
     reference : control/reference-niche cells (the 'no effect' anchor)
 
     Returns dict with floor (+std), S (+std), signal_gap, gap_z, has_signal, n.
-    has_signal is True when S sits z standard deviations above the floor's noise band, i.e.
-    there is a real niche shift to predict. Sample sizes are matched to n for all distances.
+    has_signal requires BOTH (a) S sits z standard deviations above the floor's noise band
+    (statistically detectable) AND (b) the gap is at least `min_rel` of the floor (a meaningful
+    effect size). Condition (b) guards the skill ratio's denominator (S - floor): when the gap is
+    statistically detectable but tiny, the ratio is ill-conditioned and the skill explodes. Sample
+    sizes are matched to n for all distances.
     """
     observed = np.asarray(observed, float)
     reference = np.asarray(reference, float)
@@ -74,11 +78,13 @@ def calibrate_edistance(observed, reference, n=None, repeats=20, seed=0, z=2.0, 
     S_m, S_s = edist_matched(observed, reference, n, repeats, seed + 1)
     gap = S_m - floor_m
     spread = float(np.sqrt(floor_s ** 2 + S_s ** 2)) or 1e-12
+    detectable = gap > z * spread
+    big_enough = gap > min_rel * abs(floor_m)
     return {
         "floor": floor_m, "floor_std": floor_s,
         "S": S_m, "S_std": S_s,
-        "signal_gap": gap, "gap_z": gap / spread,
-        "has_signal": bool(gap > z * spread),
+        "signal_gap": gap, "gap_z": gap / spread, "rel_gap": gap / (abs(floor_m) or 1e-12),
+        "has_signal": bool(detectable and big_enough),
         "n": n,
     }
 
