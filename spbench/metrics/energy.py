@@ -3,9 +3,20 @@ from scipy.spatial.distance import cdist
 from .base import Metric
 from . import register
 
+def energy_distance(X, Y) -> float:
+    """Raw energy distance 2*mean||X-Y|| - mean||X-X'|| - mean||Y-Y'|| with NO internal
+    subsampling. The canonical primitive: callers that control their own sample size (e.g. the
+    matched-n baseline comparison in spbench.compare) use this directly; the EnergyDistance metric
+    subsamples first, then calls it. NaN for empty inputs, clamped at 0."""
+    X = np.asarray(X, float); Y = np.asarray(Y, float)
+    if X.shape[0] == 0 or Y.shape[0] == 0:
+        return float("nan")
+    return float(max(0.0, 2 * cdist(X, Y).mean() - cdist(X, X).mean() - cdist(Y, Y).mean()))
+
 class EnergyDistance(Metric):
     """E^2(X,Y) = 2*mean||X-Y|| - mean||X-X'|| - mean||Y-Y'||.
-    pred=X (predicted cell group), gt=Y (observed group). Subsample for speed."""
+    pred=X (predicted cell group), gt=Y (observed group). Subsample for speed, then call the
+    shared `energy_distance` primitive."""
     name = "energy"
     higher_is_better = False
 
@@ -20,12 +31,6 @@ class EnergyDistance(Metric):
         return A
 
     def compute(self, pred, gt, context=None) -> float:
-        X, Y = self._sub(np.asarray(pred, float)), self._sub(np.asarray(gt, float))
-        if X.shape[0] == 0 or Y.shape[0] == 0:
-            return float("nan")
-        a = cdist(X, Y).mean()
-        b = cdist(X, X).mean()
-        c = cdist(Y, Y).mean()
-        return float(max(0.0, 2 * a - b - c))
+        return energy_distance(self._sub(np.asarray(pred, float)), self._sub(np.asarray(gt, float)))
 
 register(EnergyDistance())
