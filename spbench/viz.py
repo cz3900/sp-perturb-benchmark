@@ -117,31 +117,66 @@ def plot_slope(res, significant=None, title="Baseline -> learned, per perturbati
     fig.tight_layout()
     return fig
 
-def plot_skill_leaderboard(res, title="Propagation skill — fraction of recoverable signal captured"):
-    """Headline figure: per-perturbation 0..100% skill for the two deployable models (Gaussian
-    baseline vs learned GCN), shown only for perturbations with real signal. skill 0 = no better
-    than predicting 'no effect' (the control niche); 100 = perfect (at the noise floor).
-    Needs res['skill'] from run_benchmark(..., compute_skill=True)."""
-    skill = res.get("skill", {})
-    items = [(p, skill[p]) for p in skill if skill[p].get("has_signal")]
-    dropped = [p for p in skill if not skill[p].get("has_signal")]
-    items.sort(key=lambda t: (t[1].get("learned") if t[1].get("learned") == t[1].get("learned") else -1))
-    fig, ax = plt.subplots(figsize=(7, max(3, 0.4 * len(items) + 1)))
-    clip = lambda v: float("nan") if v != v else max(-100.0, min(100.0, 100 * v))
-    if items:
-        names = [p for p, _ in items]
-        y = np.arange(len(names))
-        base = [clip(items[i][1]["baseline"]) for i in range(len(items))]
-        lrn = [clip(items[i][1]["learned"]) for i in range(len(items))]
-        ax.barh(y - 0.2, base, 0.4, color=_NON, label="Gaussian baseline")
-        ax.barh(y + 0.2, lrn, 0.4, color=_SIG, label="learned GCN")
-        ax.set_yticks(y, names)
-        ax.set_xlim(-105, 105)
-        ax.legend(loc="lower right", fontsize=9)
-    ax.axvline(0, color="k", lw=0.8)
-    ax.set_xlabel("skill (%)  [clipped to ±100]   <0 = worse than 'no effect',  100 = perfect")
-    note = (f"   ({len(dropped)} of {len(skill)} dropped: no reliable signal)") if dropped else ""
-    ax.set_title(f"{title}\n{len(items)} perturbations with signal{note}", fontsize=11)
+# ---------------------------------------------------------------------------
+# Baseline-gain figures. gain = e_null - e_method (>0 beats predicting 'no effect').
+# These replace the old skill score: same currency (energy distance), no ratios.
+# Need res['compare'] from run_benchmark(..., compare=True).
+# ---------------------------------------------------------------------------
+
+# methods plotted left->right: most deployable first, oracle handled separately as a ceiling line
+_GAIN_METHODS = ["model+learned", "model+base", "GT+learned", "GT+base"]
+_GAIN_COLORS = {"model+learned": _SIG, "model+base": "#72B7B2",
+                "GT+learned": "#B0A8D0", "GT+base": _NON}
+
+def plot_baseline_gain(res, title="Each method vs the no-effect baseline (all perturbations)"):
+    """HEADLINE — one box (+ jittered points, one per perturbation) per method, of
+    gain = e_null - e_method. The horizontal line at 0 IS the no-effect baseline: a method is
+    useful only where its points sit ABOVE 0. The dashed line is the oracle ceiling (the best a
+    non-leaking model could reach). Answers 'does each method beat doing nothing, and by how much,
+    across all genes?'."""
+    cmp = res.get("compare", {})
+    perts = [p for p in cmp if cmp[p].get("gain")]
+    data = [[cmp[p]["gain"].get(m, float("nan")) for p in perts] for m in _GAIN_METHODS]
+    data = [[v for v in col if v == v] for col in data]           # drop NaNs
+    fig, ax = plt.subplots(figsize=(7, 4.6))
+    ax.boxplot(data, positions=range(len(_GAIN_METHODS)), widths=0.5, showfliers=False)
+    rng = np.random.default_rng(0)
+    for i, (m, col) in enumerate(zip(_GAIN_METHODS, [_GAIN_COLORS[m] for m in _GAIN_METHODS])):
+        d = data[i]
+        if d:
+            ax.scatter(rng.normal(i, 0.06, size=len(d)), d, color=col, alpha=0.85, zorder=3, s=22)
+    ax.axhline(0, color="k", lw=1.1)
+    ax.text(len(_GAIN_METHODS) - 0.5, 0, " baseline (no effect)", va="bottom", ha="right", fontsize=8)
+    oracle = [cmp[p]["gain"]["oracle"] for p in perts if "oracle" in cmp[p].get("gain", {})]
+    if oracle:
+        m = float(np.nanmean(oracle))
+        ax.axhline(m, color="0.4", lw=1.0, ls="--")
+        ax.text(0, m, " ceiling (best possible)", va="bottom", ha="left", fontsize=8, color="0.4")
+    ax.set_xticks(range(len(_GAIN_METHODS)), _GAIN_METHODS, rotation=12)
+    ax.set_ylabel("gain = e_null − e   (>0 beats 'no effect')")
+    ax.set_title(f"{title}\n{len(perts)} perturbations", fontsize=11)
+    fig.tight_layout()
+    return fig
+
+def plot_gain_per_perturbation(res, significant=None, method="model+learned",
+                               title="Deployable model vs baseline, per perturbation"):
+    """DETAIL — horizontal bars of gain = e_null - e for the deployable method, one per
+    perturbation, sorted, coloured by significance. >0 (right of the line) = this gene's niche is
+    predicted better than assuming 'no effect'. Shows WHICH genes (if any) the pipeline wins on."""
+    cmp = res.get("compare", {})
+    sig = set(significant or [])
+    g = {p: cmp[p]["gain"].get(method) for p in cmp if cmp[p].get("gain")}
+    g = {p: v for p, v in g.items() if v == v}
+    order = sorted(g, key=lambda p: g[p])
+    colors = [_SIG if p in sig else _NON for p in order]
+    fig, ax = plt.subplots(figsize=(7, max(3, 0.32 * len(order))))
+    ax.barh(range(len(order)), [g[p] for p in order], color=colors)
+    ax.set_yticks(range(len(order)), order)
+    ax.axvline(0, color="k", lw=1.1)
+    ax.set_xlabel(f"gain = e_null − e[{method}]   (>0: beats 'no effect')")
+    ax.set_title(title)
+    if sig:
+        _legend_sig(ax)
     fig.tight_layout()
     return fig
 

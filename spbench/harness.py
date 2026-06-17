@@ -68,9 +68,9 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
     draws are reseeded identically for each of the four cells, so e1..e4 differ only by their
     mean field. Pass residuals=None to score the raw mean-only predictions.
 
-    With return_niches=True the grid also carries `_niches` = {observed, reference, "3", "4"}
-    (the predicted bystander-niche arrays for the two deployable models) so skill scores can be
-    computed downstream via spbench.calibrate."""
+    With return_niches=True the grid also carries `_niches` = {observed, reference, "1".."4"}
+    (the predicted bystander-niche arrays for all four 2x2 cells) so each can be compared to the
+    no-effect baseline downstream via spbench.compare."""
     energy = get_metric("energy")
     centers = np.where(data.perturbation == perturbation)[0]
     gt = propagation_gt(data, perturbation, edges, k_ref=k_ref)
@@ -107,5 +107,5 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
     grid = {k: {"energy_prop": energy.compute(v, observed)} for k, v in cells.items()}
     if return_niches:
         grid["_niches"] = {"observed": observed, "reference": gt["reference_niche"],
-                           "3": cells["3"], "4": cells["4"]}
+                           "1": cells["1"], "2": cells["2"], "3": cells["3"], "4": cells["4"]}
     return grid

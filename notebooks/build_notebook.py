@@ -29,8 +29,8 @@ md("## 0. What is measured (read this first)\n"
    "| **model seed** (predicted from control cells)    | `e3` | `e4` |\n"
    "\n"
    "Each `e1..e4` is an **E-distance** between the *predicted* neighbour distribution and the "
-   "*observed perturbed* neighbour distribution. Lower = better. `e4` (model seed + learned prop) "
-   "is the real, deployable score.\n"
+   "*observed perturbed* neighbour distribution. Lower = better. `e4` (model seed + learned prop, "
+   "aka `model+learned`) is the real, deployable score.\n"
    "\n"
    "**Energy distance.** For two groups of cells X (predicted) and Y (observed):\n"
    "`E = 2·mean‖X−Y‖ − mean‖X−X'‖ − mean‖Y−Y'‖`. It is 0 when the two clouds overlap and needs "
@@ -55,25 +55,31 @@ md("## 0. What is measured (read this first)\n"
    "cell (`e1`/`e2`) were ≈0 it would mean the model copied the observed niche (a leak). Both must "
    "be clearly > 0.\n"
    "\n"
-   "**Skill (0..100%).** Absolute E-distance (~6) is dominated by background cell variability, so "
-   "each perturbation is recalibrated:\n"
-   "- `floor` = E-distance between two halves of the *observed* perturbed niche (pure sampling "
-   "noise — the best a perfect prediction could reach).\n"
-   "- `S` = E-distance(observed perturbed niche, control niche) = the total real effect to predict "
-   "(the ceiling).\n"
-   "- `skill = (S − model_error) / (S − floor)` — **0** = no better than predicting 'no effect', "
-   "**100%** = perfect. A perturbation is kept only if `S` is **both** statistically above `floor` "
-   "(z>2) **and** a meaningful effect size (gap ≥ `min_rel`·floor, default 5%); otherwise the skill "
-   "ratio's denominator is tiny and ill-conditioned, so the perturbation is dropped as **no "
-   "signal**.")
+   "**The one comparison that matters — beat the no-effect baseline.** The 2×2 only compares the "
+   "four cells to *each other*; on its own it can't tell you whether *any* of them beats doing "
+   "nothing. So we add one more prediction in the **same currency** (E-distance to the observed "
+   "niche):\n"
+   "- `e_null` = E-distance(**control niche**, observed niche) = the score of the laziest guess, "
+   "'**the neighbours did not change**'. This is the bar to beat.\n"
+   "- `oracle` = best a *non-leaking* model could reach (perfect mean shift + control-population "
+   "variance) = a ceiling.\n"
+   "\n"
+   "Then the headline quantity is the **gain**:\n"
+   "\n"
+   "  `gain = e_null − e_method`  — **>0** the method beats 'no effect'; **<0** it is *worse* than "
+   "doing nothing; bigger = better. No ratios, no clipping. `gain(model+learned)` is the bottom "
+   "line (the deployable pipeline); `gain(oracle)` shows how much signal is recoverable at all.\n"
+   "\n"
+   "All of `e1..e4`, `e_null`, `oracle` are computed at a **matched sample size** (same n, same "
+   "observed subsample per repeat) so the energy distance's finite-sample bias cancels and the "
+   "gains are clean paired differences.")
 
 md("## 1. Imports")
 code("import matplotlib\n%matplotlib inline\n"
      "from spbench.adapters import get_adapter\n"
      "from spbench.config import run_benchmark\n"
-     "from spbench.viz import (plot_2x2, plot_attribution, plot_learned_value,\n"
-     "                         plot_significance_contrast, plot_slope, plot_seed_vs_learned,\n"
-     "                         plot_skill_leaderboard)\n"
+     "from spbench.viz import (plot_2x2, plot_baseline_gain, plot_gain_per_perturbation,\n"
+     "                         plot_learned_value, plot_significance_contrast)\n"
      "import numpy as np, pandas as pd")
 
 md("## 2. Load the data\n"
@@ -107,78 +113,69 @@ md("## 4. Run the benchmark\n"
    "the observed propagation ground truth, then fills the 2×2 by composing three models — a "
    "**trivial seed** (control + global mean shift), a **Gaussian-kernel** baseline propagation, "
    "and a self-supervised **GCN** learned propagation — and scores every cell with the "
-   "E-distance. `compute_skill=True` also calibrates each perturbation (floor / S) and returns "
-   "the 0..1 skill. (`k` = neighbours per cell; `k_ref` = matched control cells per perturbed "
-   "cell.)")
+   "E-distance. `compare=True` also computes the no-effect baseline `e_null`, the `oracle` "
+   "ceiling, and the per-method **gain = e_null − e** (see section 0). (`k` = neighbours per cell; "
+   "`k_ref` = matched control cells per perturbed cell.)")
 code("res = run_benchmark(data, perturbations=EVAL, k=15, k_ref=5,\n"
      "                    gcn_kwargs={'hidden':64,'epochs':30})")
 
 md("## 5. Metric table\n"
-   "One row per perturbation. Columns: `e1..e4` are the four 2×2 E-distances (see section 0); "
-   "`seed_cost = e3−e1`, `learned_value = e1−e2`, `end_to_end = e4`; `leak_ok` is the leakage "
-   "audit. Sorted by `end_to_end` (best first). Remember the absolute E-distances (~6) are "
-   "background-dominated — read the **differences** (`seed_cost`, `learned_value`) and the skill "
-   "leaderboard below, not the raw values.")
+   "One row per perturbation, all matched-n E-distances to the observed niche (lower = closer to "
+   "reality). `e_null` is the no-effect baseline, `oracle` the ceiling, and the four `model+...` / "
+   "`GT+...` columns are the 2×2 cells. **`gain_deploy = e_null − e[model+learned]`** is the bottom "
+   "line: **>0 means the deployable pipeline beats doing nothing.** Sorted by `gain_deploy` (best "
+   "first). `gain_oracle` shows how much signal is recoverable at all.")
 code("rows=[]\n"
      "for p in EVAL:\n"
-     "    g=res['grids'][p]; a=res['attribution'][p]; s=res['skill'].get(p, {})\n"
+     "    e=res['compare'][p]['e']; g=res['compare'][p]['gain']\n"
      "    rows.append(dict(perturbation=p, sig=p in set(SIGNIFICANT),\n"
-     "                     e1=g['1']['energy_prop'], e2=g['2']['energy_prop'],\n"
-     "                     e3=g['3']['energy_prop'], e4=g['4']['energy_prop'],\n"
-     "                     seed_cost=a['seed_cost'], learned_value=a['learned_value'],\n"
-     "                     end_to_end=a['end_to_end'], leak_ok=res['leakage_pass'][p],\n"
-     "                     has_signal=s.get('has_signal'), skill_learned=s.get('learned')))\n"
-     "df=pd.DataFrame(rows).sort_values('end_to_end'); df")
+     "                     e_null=e['null'], oracle=e.get('oracle'),\n"
+     "                     GT_base=e['GT+base'], GT_learned=e['GT+learned'],\n"
+     "                     model_base=e['model+base'], model_learned=e['model+learned'],\n"
+     "                     gain_deploy=g['model+learned'], gain_oracle=g.get('oracle'),\n"
+     "                     leak_ok=res['leakage_pass'][p]))\n"
+     "df=pd.DataFrame(rows).sort_values('gain_deploy', ascending=False); df")
 
 md("## 6. Result figures\n"
-   "Absolute E-distance is background-dominated (~6); the signal lives in the **differences** and "
-   "in the **calibrated skill**. The figures below aggregate across perturbations and contrast "
-   "significant vs non-significant — that is what reveals whether learned propagation captures "
-   "real signal rather than just smoothing better everywhere.")
+   "The headline is whether each method beats the no-effect baseline (`gain > 0`). The figures "
+   "aggregate `gain` across perturbations and, for the deployable model, break it down per gene "
+   "and contrast significant vs non-significant.")
 
-md("### Headline — skill leaderboard\n"
-   "Absolute E-distance turned into a **0..100% skill** = fraction of the recoverable niche "
-   "signal each model captures (via `calibrate_edistance`: skill `= (S − error)/(S − floor)`). "
-   "Only perturbations whose perturbed niche sits clearly above the noise `floor` are shown; the "
-   "rest are dropped (no signal to predict). Bars are clipped to ±100%; **<0 = worse than "
-   "predicting 'no effect'**. This is the one-glance 'how good is it' figure.")
-code("plot_skill_leaderboard(res).savefig('fig_skill_leaderboard.png', dpi=140); None")
+md("### Headline — each method vs the no-effect baseline\n"
+   "One box (+ one point per perturbation) per method, of **`gain = e_null − e`**. The solid line "
+   "at **0 is the no-effect baseline**: a method is useful only where its points sit **above** it. "
+   "The dashed line is the **oracle ceiling** (best a non-leaking model could reach). One glance: "
+   "does any method beat doing nothing, by how much, and how far from the ceiling.")
+code("plot_baseline_gain(res).savefig('fig_gain_aggregate.png', dpi=140); None")
 
-md("### B — significance contrast (the proof)\n"
-   "`learned_value` (= e1−e2) for the significant group vs the non-significant group, with a "
-   "sign-test. **If the significant group is not clearly higher, the GCN's advantage is generic** "
-   "(a better niche smoother), not specific to real spatial signal.")
-code("plot_significance_contrast(res, SIGNIFICANT).savefig('fig_B_contrast.png', dpi=140); None")
+md("### Per gene — deployable model vs baseline\n"
+   "`gain = e_null − e[model+learned]` for every perturbation, sorted, coloured by significance. "
+   "**Right of the line (>0) = the deployable pipeline predicts this gene's niche better than "
+   "assuming 'no effect'.** Shows *which* genes (if any) it wins on, and whether they are the "
+   "MC-significant ones.")
+code("plot_gain_per_perturbation(res, SIGNIFICANT).savefig('fig_gain_per_pert.png', dpi=140); None")
 
-md("### A — learned_value per perturbation\n"
-   "Every perturbation's `learned_value` (= e1−e2), sorted, coloured by significance. "
-   "**>0 = the GCN beats the Gaussian baseline.** Outliers and the significant/non-significant "
-   "split are visible at a glance.")
-code("plot_learned_value(res, SIGNIFICANT).savefig('fig_A_learned_value.png', dpi=140); None")
-
-md("### C — baseline → learned slope (consistency + outliers)\n"
-   "A line per perturbation from `e1` (baseline prop) to `e2` (learned prop). **Downward = the "
-   "GCN is better.** Direction-consistency and any outlier (a line far from the cluster) jump "
-   "out.")
-code("plot_slope(res, SIGNIFICANT).savefig('fig_C_slope.png', dpi=140); None")
-
-md("### D — attribution scatter (where the error lives)\n"
-   "`seed_cost` (x) vs `learned_value` (y), one point per perturbation. Points near x=0 mean the "
-   "seed barely matters; points with y>0 mean learned propagation helps.")
-code("plot_seed_vs_learned(res, SIGNIFICANT).savefig('fig_D_seed_vs_learned.png', dpi=140); None")
+md("### Diagnostic — is the learned advantage signal-specific?\n"
+   "`learned_value = e1 − e2` (GCN vs Gaussian, holding the oracle seed) for significant vs "
+   "non-significant groups, with a sign-test. **If the significant group is not clearly higher, "
+   "the GCN's edge over Gaussian is generic** (a better smoother), not specific to real spatial "
+   "signal.")
+code("plot_significance_contrast(res, SIGNIFICANT).savefig('fig_signal_specificity.png', dpi=140); None")
 
 md("### Single-gene 2×2 (explainer, not a result)\n"
-   "What one perturbation's 2×2 grid of E-distances looks like — useful to understand the layout, "
-   "but the absolute values are background-dominated so do not read it as a result.")
+   "What one perturbation's 2×2 grid of E-distances looks like — useful to understand the layout. "
+   "Read it together with `e_null` (the baseline) for that gene, not in isolation.")
 code("plot_2x2(res['grids'][EVAL[0]], title=EVAL[0])")
 
-md("## 7. Ranking + go/no-go note\n"
-   "Lowest `end_to_end` E-distance = best, but remember it is background-dominated — prefer the "
-   "skill leaderboard. The real go/no-go is the **rho_niche** (with vs without niche) **+0.10** "
-   "gate, to be wired in once the no-niche variant exists. And `learned_value > 0` alone does "
-   "**not** prove signal-specificity — confirm with figure B and a future label-permutation "
-   "control.")
-code("print('ranking (best first):', res['ranking'])")
+md("## 7. Bottom line\n"
+   "Count how many perturbations the deployable pipeline actually beats the baseline on "
+   "(`gain_deploy > 0`), and whether they are the MC-significant ones. `learned_value > 0` alone "
+   "does **not** prove signal-specificity — confirm with the contrast figure and a future "
+   "label-permutation control.")
+code("g = {p: res['compare'][p]['gain']['model+learned'] for p in EVAL}\n"
+     "wins = [p for p in EVAL if g[p] > 0]\n"
+     "print(f'{len(wins)}/{len(EVAL)} perturbations beat the no-effect baseline:', wins)\n"
+     "print('  of which MC-significant:', [p for p in wins if p in set(SIGNIFICANT)])")
 
 nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3",
       "language": "python", "name": "python3"}, "language_info": {"name": "python"}},
