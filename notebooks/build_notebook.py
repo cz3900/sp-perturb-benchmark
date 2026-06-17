@@ -72,7 +72,16 @@ md("## 0. What is measured (read this first)\n"
    "\n"
    "All of `e1..e4`, `e_null`, `oracle` are computed at a **matched sample size** (same n, same "
    "observed subsample per repeat) so the energy distance's finite-sample bias cancels and the "
-   "gains are clean paired differences.")
+   "gains are clean paired differences.\n"
+   "\n"
+   "**Two tasks, each with its own metric (decoupled).**\n"
+   "- **seed** (the perturbed cell's own change) is scored *directly*: `seed_pcc` = **PCC-delta** "
+   "= Pearson correlation between the predicted and true gene-wise shift (`perturbed − control`); "
+   "`seed_mse` = magnitude of the mean error. PCC-delta is bounded [−1,1] and self-anchored (0 = "
+   "no directional skill), so it sidesteps the energy distance's fragility.\n"
+   "- **propagation** (the niche) is scored with the energy distance / `gain` (above) **plus** a "
+   "niche **PCC-delta** (`niche_pcc`) — direction of the niche's gene-wise shift — as a robust "
+   "cross-check. Sanity: `oracle`'s niche PCC-delta ≈ 1, the `null`'s is undefined (flat shift).")
 
 md("## 1. Imports")
 code("import matplotlib\n%matplotlib inline\n"
@@ -121,21 +130,20 @@ code("res = run_benchmark(data, perturbations=EVAL, k=15, k_ref=5,\n"
      "                    gcn_kwargs={'hidden':64,'epochs':30})")
 
 md("## 5. Metric table\n"
-   "One row per perturbation, all matched-n E-distances to the observed niche (lower = closer to "
-   "reality). `e_null` is the no-effect baseline, `oracle` the ceiling, and the four `model+...` / "
-   "`GT+...` columns are the 2×2 cells. **`gain_deploy = e_null − e[model+learned]`** is the bottom "
-   "line: **>0 means the deployable pipeline beats doing nothing.** Sorted by `gain_deploy` (best "
-   "first). `gain_oracle` shows how much signal is recoverable at all.")
+   "One row per perturbation, organised by the two decoupled tasks. **seed**: `seed_pcc` "
+   "(direction of the cell's own shift, −1..1, higher better), `seed_mse` (magnitude error, lower "
+   "better). **propagation (deployable model+learned)**: `niche_gain = e_null − e` (**>0 beats "
+   "'no effect'**), `niche_pcc` (direction of the niche shift). Context: `e_null` (baseline) and "
+   "`gain_oracle` (recoverable ceiling). Sorted by `niche_gain` (best first).")
 code("rows=[]\n"
      "for p in EVAL:\n"
-     "    e=res['compare'][p]['e']; g=res['compare'][p]['gain']\n"
+     "    c=res['compare'][p]; s=res['seed'][p]\n"
      "    rows.append(dict(perturbation=p, sig=p in set(SIGNIFICANT),\n"
-     "                     e_null=e['null'], oracle=e.get('oracle'),\n"
-     "                     GT_base=e['GT+base'], GT_learned=e['GT+learned'],\n"
-     "                     model_base=e['model+base'], model_learned=e['model+learned'],\n"
-     "                     gain_deploy=g['model+learned'], gain_oracle=g.get('oracle'),\n"
+     "                     seed_pcc=s['pcc_delta'], seed_mse=s['mse'],\n"
+     "                     niche_gain=c['gain']['model+learned'], niche_pcc=c['pcc']['model+learned'],\n"
+     "                     e_null=c['e']['null'], gain_oracle=c['gain'].get('oracle'),\n"
      "                     leak_ok=res['leakage_pass'][p]))\n"
-     "df=pd.DataFrame(rows).sort_values('gain_deploy', ascending=False); df")
+     "df=pd.DataFrame(rows).sort_values('niche_gain', ascending=False); df")
 
 md("## 6. Result figures\n"
    "The headline is whether each method beats the no-effect baseline (`gain > 0`). The figures "

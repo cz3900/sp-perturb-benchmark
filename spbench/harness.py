@@ -106,6 +106,14 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
     }
     grid = {k: {"energy_prop": energy.compute(v, observed)} for k, v in cells.items()}
     if return_niches:
+        # seed evaluation data: model-seed prediction vs the observed perturbed centers, with the
+        # matched control cells as the shift baseline (scored directly, not through the niche).
+        seed_pred = (np.array([seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
+                               for rc in refs]) if len(centers)
+                     else np.zeros((0, data.n_genes)))
+        seed_ref_idx = np.unique(np.concatenate(refs)) if len(refs) else np.array([], int)
         grid["_niches"] = {"observed": observed, "reference": gt["reference_niche"],
-                           "1": cells["1"], "2": cells["2"], "3": cells["3"], "4": cells["4"]}
+                           "1": cells["1"], "2": cells["2"], "3": cells["3"], "4": cells["4"],
+                           "seed_obs": data.X[centers], "seed_pred": seed_pred,
+                           "seed_ref": data.X[seed_ref_idx]}
     return grid

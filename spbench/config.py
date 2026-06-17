@@ -3,7 +3,7 @@ import numpy as np
 from .graph import build_knn_graph
 from .harness import fill_2x2, _control_reference, _control_residuals
 from .judge import attribute, leakage_pass
-from .compare import compare_to_baseline
+from .compare import compare_to_baseline, evaluate_seed
 from .models.trivial_seed import TrivialSeed
 from .models.gaussian_prop import GaussianProp
 from .models.gcn_prop import SimpleGCN
@@ -29,7 +29,7 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
     perturbations = perturbations or data.perturbations()
     X_ref = _control_reference(data)            # identical across perturbations -> compute once
     residuals = _control_residuals(data) if distributional else None
-    grids, attrib, leak, cmp = {}, {}, {}, {}
+    grids, attrib, leak, cmp, seed_eval = {}, {}, {}, {}, {}
     _bar = perturbations
     if progress:
         try:
@@ -41,7 +41,9 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
         g = fill_2x2(data, p, edges, seed, base, learned, k_ref=k_ref, X_ref=X_ref,
                      return_niches=compare, residuals=residuals)
         if compare and "_niches" in g:
-            cmp[p] = compare_to_baseline(g.pop("_niches"), residuals=residuals)
+            niches = g.pop("_niches")
+            cmp[p] = compare_to_baseline(niches, residuals=residuals)   # niche: E-distance/gain + PCC-delta
+            seed_eval[p] = evaluate_seed(niches)                        # seed: PCC-delta + MSE (direct)
         grids[p] = g
         attrib[p] = attribute(g)
         leak[p] = leakage_pass(g)
@@ -49,6 +51,7 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
     res = {"grids": grids, "attribution": attrib, "leakage_pass": leak, "ranking": ranking}
     if compare:
         res["compare"] = cmp
+        res["seed"] = seed_eval
     return res
 
 

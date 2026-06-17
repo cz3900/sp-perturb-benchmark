@@ -24,17 +24,16 @@ md("## 2. Run the benchmark (trivial seed + Gaussian baseline + simple GCN)")
 code("PERTS = data.perturbations()\n"
      "res = run_benchmark(data, perturbations=PERTS, k=15, k_ref=5,\n"
      "                    gcn_kwargs={'hidden': 32, 'epochs': 20})")
-md("## 3. Energy-distance + gain table (per perturbation)\n"
-   "All distances are to the observed niche (lower = closer). `e_null` = no-effect baseline, "
-   "`oracle` = ceiling, `m+lrn` = deployable (model seed + learned prop). "
-   "**`gain = e_null − e[model+learned]` > 0 means the deployable pipeline beats doing nothing.**")
-code("hdr = f\"{'pert':6} {'e_null':>7} {'oracle':>7} {'GT+base':>8} {'GT+lrn':>7} {'m+base':>7} {'m+lrn':>7} {'gain':>7}\"\n"
+md("## 3. Metric table (per perturbation): seed + propagation, decoupled\n"
+   "**seed**: `seed_pcc` (direction of the cell's own shift, higher better), `seed_mse` (magnitude). "
+   "**propagation (deployable model+learned)**: `niche_gain = e_null − e` (>0 beats 'no effect'), "
+   "`niche_pcc` (direction of the niche shift). `e_null` = baseline.")
+code("hdr = f\"{'pert':6} {'seed_pcc':>8} {'seed_mse':>8} | {'niche_gain':>10} {'niche_pcc':>9} {'e_null':>7}\"\n"
      "print(hdr); print('-' * len(hdr))\n"
      "for p in PERTS:\n"
-     "    e = res['compare'][p]['e']; g = res['compare'][p]['gain']\n"
-     "    print(f\"{p:6} {e['null']:7.3f} {e.get('oracle', float('nan')):7.3f} \"\n"
-     "          f\"{e['GT+base']:8.3f} {e['GT+learned']:7.3f} {e['model+base']:7.3f} \"\n"
-     "          f\"{e['model+learned']:7.3f} {g['model+learned']:7.3f}\")")
+     "    c = res['compare'][p]; s = res['seed'][p]\n"
+     "    print(f\"{p:6} {s['pcc_delta']:8.3f} {s['mse']:8.3f} | \"\n"
+     "          f\"{c['gain']['model+learned']:10.3f} {c['pcc']['model+learned']:9.3f} {c['e']['null']:7.3f}\")")
 md("## 4. Result figures\n"
    "On synthetic data the seed is planted on gene i and the propagation on gene i+10, so models "
    "that 'spread the seed' predict the wrong gene — `gain` is correctly **negative** (worse than "

@@ -33,6 +33,36 @@ def _sub(A, n, rng):
     return A if len(A) <= n else A[rng.choice(len(A), n, replace=False)]
 
 
+def _pcc_delta(d_pred, d_true):
+    """Pearson correlation between the predicted and true gene-wise shift vectors (the 'delta' =
+    perturbed mean - control mean). Captures whether the prediction moves the right genes in the
+    right direction (GEARS/scGPT convention). Bounded [-1, 1], self-anchored at 0 (a no-effect
+    prediction has a flat delta -> NaN -> no skill). NaN if either shift is essentially flat."""
+    d_pred = np.asarray(d_pred, float); d_true = np.asarray(d_true, float)
+    if d_pred.std() < 1e-12 or d_true.std() < 1e-12:
+        return float("nan")
+    return float(np.corrcoef(d_pred, d_true)[0, 1])
+
+
+def _mse(a, b):
+    return float(np.mean((np.asarray(a, float) - np.asarray(b, float)) ** 2))
+
+
+def evaluate_seed(niches):
+    """Direct seed score (decoupled from propagation): the MODEL seed (predicted perturbed-cell
+    expression) vs the observed perturbed cells. PCC-delta = direction of the gene-wise shift
+    (baseline = matched control cells); MSE = magnitude of the mean error. Both are mean-based,
+    so they need no distributional readout and have none of the energy distance's fragility."""
+    obs = np.asarray(niches.get("seed_obs", np.zeros((0, 0))), float)
+    pred = np.asarray(niches.get("seed_pred", np.zeros((0, 0))), float)
+    ref = np.asarray(niches.get("seed_ref", np.zeros((0, 0))), float)
+    if len(obs) == 0 or len(pred) == 0 or len(ref) == 0:
+        return {"pcc_delta": float("nan"), "mse": float("nan"), "n": int(len(obs))}
+    ref_mean = ref.mean(0)
+    return {"pcc_delta": _pcc_delta(pred.mean(0) - ref_mean, obs.mean(0) - ref_mean),
+            "mse": _mse(pred.mean(0), obs.mean(0)), "n": int(len(obs))}
+
+
 def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300):
     """Matched-n energy distance of every 2x2 cell, the no-effect baseline, and an oracle ceiling
     to the observed niche, plus gain = e_null - e_method.
@@ -40,8 +70,11 @@ def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300):
     niches    : dict with 'observed', 'reference', and the four cell arrays '1'..'4'.
     residuals : per-cell-type control residual pools (for the oracle ceiling); None -> no oracle.
 
-    Returns {'e': {method: dist}, 'gain': {method: e_null - dist}, 'n': matched size,
-             'has_effect': bool}. gain['null'] is 0 by construction (the baseline line).
+    Returns {'e': {method: dist}, 'gain': {method: e_null - dist}, 'pcc': {method: PCC-delta of
+    the niche shift}, 'n': matched size, 'has_effect': bool}. gain['null'] is 0 by construction
+    (the baseline line); pcc['oracle'] is ~1 and pcc['null'] is NaN (flat shift), both sanity
+    checks. PCC-delta complements the energy distance: it is mean-based, bounded and self-anchored,
+    so it is robust where the energy distance is fragile (weak signal, variance scale).
     """
     obs = np.asarray(niches["observed"], float)
     ref = np.asarray(niches["reference"], float)
@@ -63,7 +96,11 @@ def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300):
     e = {k: float(np.nanmean(v)) for k, v in acc.items()}
     null = e["null"]
     gain = {k: null - e[k] for k in clouds}
+    # PCC-delta of the niche shift per method (direction of the gene-wise change vs the true shift)
+    ref_mean = ref.mean(0)
+    d_true = obs.mean(0) - ref_mean
+    pcc = {k: _pcc_delta(np.asarray(c, float).mean(0) - ref_mean, d_true) for k, c in clouds.items()}
     # 'real effect' = the no-effect baseline is itself clearly far from observed (vs the oracle floor)
     floor = e.get("oracle", 0.0)
     has_effect = bool(null > 2 * floor) if "oracle" in e else bool(null > 0)
-    return {"e": e, "gain": gain, "n": n, "has_effect": has_effect}
+    return {"e": e, "gain": gain, "pcc": pcc, "n": n, "has_effect": has_effect}

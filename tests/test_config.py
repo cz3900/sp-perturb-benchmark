@@ -20,3 +20,16 @@ def test_run_benchmark_compares_to_baseline():
         assert m in c["e"] and m in c["gain"]
     assert c["gain"]["null"] == 0.0
     assert abs(c["gain"]["model+learned"] - (c["e"]["null"] - c["e"]["model+learned"])) < 1e-9
+    # niche PCC-delta: oracle (perfect mean shift) ~ 1, every method present
+    assert "pcc" in c and "model+learned" in c["pcc"]
+    assert c["pcc"]["oracle"] > 0.9
+
+def test_run_benchmark_scores_seed_directly():
+    data = make_synthetic(seed=0)
+    res = run_benchmark(data, perturbations=["P0", "P1"], k=8, k_ref=5,
+                        gcn_kwargs={"hidden": 16, "epochs": 3}, progress=False)
+    s = res["seed"]["P0"]
+    # seed gets its own PCC-delta (direction) and MSE (magnitude), independent of the niche
+    assert "pcc_delta" in s and "mse" in s
+    assert s["mse"] >= 0.0
+    assert -1.0 <= s["pcc_delta"] <= 1.0
