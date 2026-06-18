@@ -35,6 +35,15 @@ CALLER_NEW = "X, pos_raw, tissue_raw, perturb_raw = load_h5_dataset(cfg.data_fil
 CALL_OLD = "build_attributes(perturb_raw)"
 CALL_NEW = "build_attributes(perturb_raw, tissue_raw)"
 
+# Counterfactual: let --target_cell_tissue "keep" hold each cell's own tissue (flip only the
+# perturbation). Lets us flip a perturbation onto cells without forcing one tissue code.
+TISSUE_OLD = ('        tissue_code = None\n'
+              '        if isinstance(cfg.target_cell_tissue, str):')
+TISSUE_NEW = ('        tissue_code = None\n'
+              '        if cfg.target_cell_tissue == "keep":\n'
+              '            tissue_code = None\n'
+              '        elif isinstance(cfg.target_cell_tissue, str):')
+
 
 def patch(path):
     p = pathlib.Path(path)
@@ -51,6 +60,9 @@ def patch(path):
 
     assert CALLER_OLD in src, "caller line not found (CONCERT version changed?)"
     src = src.replace(CALLER_OLD, CALLER_NEW).replace(CALL_OLD, CALL_NEW)
+
+    assert TISSUE_OLD in src, "eval tissue block not found (CONCERT version changed?)"
+    src = src.replace(TISSUE_OLD, TISSUE_NEW)               # --target_cell_tissue "keep" support
 
     p.write_text(src)
     print("patched (data-driven build_attributes):", path)
