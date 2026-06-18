@@ -45,12 +45,14 @@ def evaluate_seed(niches):
             "mse": get_metric("mse").compute(pred, obs), "n": int(len(obs))}
 
 
-def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300):
+def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300, extra=None):
     """Matched-n energy distance of every 2x2 cell, the no-effect baseline, and an oracle ceiling
     to the observed niche, plus gain = e_null - e_method and a niche PCC-delta per method.
 
     niches    : dict with 'observed', 'reference', and the four cell arrays '1'..'4'.
     residuals : per-cell-type control residual pools (for the oracle ceiling); None -> no oracle.
+    extra     : optional {name: predicted-niche array} for external models (e.g. {'CONCERT': arr}),
+                scored on exactly the same matched-n / gain / PCC-delta footing as the 2x2 cells.
 
     Returns {'e': {method: dist}, 'gain': {method: e_null - dist}, 'pcc': {method: PCC-delta of
     the niche shift}, 'n': matched size, 'has_effect': bool}. gain['null'] is 0 by construction
@@ -62,6 +64,9 @@ def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300):
     ref = np.asarray(niches["reference"], float)
     clouds = {METHODS[k]: np.asarray(niches[k], float) for k in METHODS if k in niches}
     clouds["null"] = ref
+    if extra:                                                  # external models (e.g. CONCERT)
+        for nm, arr in extra.items():
+            clouds[nm] = np.asarray(arr, float)
     if residuals is not None and len(obs) > 1:                 # oracle ceiling (best non-leaking)
         pool = residuals[None]
         r0 = np.random.default_rng(seed)
