@@ -20,15 +20,14 @@ chex 0.1.86, `export LD_LIBRARY_PATH=$CONDA_PREFIX/lib`, `-w node03` no `--gres`
 
 1. **Export a slice → CONCERT `.h5`** (in spbench's env — reads the Saunders h5mu):
    ```python
-   from spbench.adapters import get_adapter
+   from spbench.adapters import SaundersAdapter
    from spbench.adapters.concert_export import export_to_concert_h5
-   data = get_adapter('saunders')(DIR, max_files=1).load()      # one slice
-   # CONCERT needs RAW INTEGER counts — data.X is raw_scaled, so pass the raw layer:
-   export_to_concert_h5(data, "saunders_slice0.h5", counts=RAW_COUNTS)   # TODO: wire raw counts
+   data = SaundersAdapter(DIR, max_files=1, counts_layer="<RAW>").load()   # one slice + raw counts
+   export_to_concert_h5(data, "saunders_slice0.h5", counts=data.meta["counts"])
    ```
-   ⚠️ open item: SaundersAdapter currently exposes `layers/raw_scaled` (scaled). The exporter asserts
-   integer counts → supply the raw count layer (add a `counts`/`raw` field to the adapter, or read
-   `mod/rna/layers/<raw>` directly). Resolve before export.
+   ⚠️ confirm `<RAW>` first: data.X is `layers/raw_scaled` (z-scored, not counts). `counts_layer`
+   reads `mod/rna/X` (set `"X"`) or `mod/rna/layers/<name>`. Inspect the .h5mu on the server
+   (`h5ls -r file.h5mu | grep -iE "layers|/X"`) to find the integer-count layer, then set it.
 
 2. **Patch CONCERT** (once, on the server copy):
    ```bash
