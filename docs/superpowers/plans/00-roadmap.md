@@ -12,6 +12,13 @@ Plan 1 (GCN 出图) ──┬─→ Plan 2 (退化模式) ──┐
 ```
 Plan 2/3/4 可在 Plan 1 后并行;adapter 依赖 Plan 1(出图)+ 视情况 Plan 2(退化)。
 
+## 完成状态 (2026-06-25 夜自主跑完)
+**Plan 1–8 全部实现 + 验证,已 merge 进 main(全套 174 passed,4 个 adapter 真实数据 load/跑通)。**
+- Plan 1 ✅ · Plan 2 ✅(`control_pool`)· Plan 3 ✅(`permutation.py`,修了 inert-bias)· Plan 4 ✅(`external.py`+`mock_end_to_end`)
+- Plan 5 ✅ DhainautAdapter(验:1906×32289)· Plan 6 ✅ BinanTumorsAdapter first cut(验:187215×550)· Plan 7 ✅ ChengAdapter(验:33141×492)· Plan 8 ✅ ShenAdapter(验:20628×21590)+ `aggregate.py` 跨数据集 rank + MC 分层(复用)
+- **待用户答的细化/问题在 `model/明早问_2026-06-25.md`**:Q1 kNN baseline 度量、Q2 Binan 构造细化、Q3 Shen 标签语义;+ 一个 pre-existing 偶发 flaky 测试。
+- 详见各 `2026-06-25-plan*.md` 文档 + 记忆 [[night-run-plans-2-8-complete]]。
+
 ---
 
 ## Plan 1 — GCN 跑通出图 ✅ 已写
