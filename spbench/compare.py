@@ -69,7 +69,8 @@ def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300, e
                 scored on exactly the same matched-n / gain / PCC-delta footing as the 2x2 cells.
 
     Returns {'e': {method: dist}, 'gain': {method: e_null - dist}, 'pcc': {method: PCC-delta of
-    the niche shift}, 'n': matched size, 'has_effect': bool}. gain['null'] is 0 by construction
+    the niche shift}, 'n': matched size, 'has_effect': bool, 'e_samples': {method: per-repeat
+    energy list whose nanmean is 'e'} (box-plot data)}. gain['null'] is 0 by construction
     (the baseline line); pcc['oracle'] is ~1 and pcc['null'] is NaN (flat shift), both sanity
     checks. PCC-delta complements the energy distance: it is mean-based, bounded and self-anchored,
     so it is robust where the energy distance is fragile (weak signal, variance scale).
@@ -108,4 +109,5 @@ def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300, e
     # 'real effect' = the no-effect baseline is itself clearly far from observed (vs the oracle floor)
     floor = e.get("oracle", 0.0)
     has_effect = bool(null > 2 * floor) if "oracle" in e else bool(null > 0)
-    return {"e": e, "gain": gain, "pcc": pcc, "n": n, "has_effect": has_effect}
+    return {"e": e, "gain": gain, "pcc": pcc, "n": n, "has_effect": has_effect,
+            "e_samples": {k: list(v) for k, v in acc.items()}}
