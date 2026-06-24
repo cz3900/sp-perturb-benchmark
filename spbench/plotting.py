@@ -17,14 +17,34 @@ NICHE_TIERS = {
     "learned": ("GCN (end-to-end mock)",  "model+learned", "GT+learned"),  # tier 2: end-to-end mock, upper = cell-2
 }
 
+# standard scoring keys in res['compare'][p]['e_samples']: the 2x2 cells + null + oracle. Anything
+# else is an external / end-to-end model fed via run_benchmark(external_models=...) / extra=.
+_STD_METHODS = {"GT+base", "GT+learned", "model+base", "model+learned", "null", "oracle"}
+
+
+def external_methods(res):
+    """Names of external/end-to-end methods present in res['compare'] (anything in e_samples that
+    is not a standard 2x2 cell / null / oracle)."""
+    cmp = res.get("compare", {})
+    names = set()
+    for c in cmp.values():
+        names |= (set(c.get("e_samples", {})) - _STD_METHODS)
+    return sorted(names)
+
 
 def collect_niche_tier(res, tier):
     """One niche board: box = pooled per-repeat energy of the tier's model cell; dashed =
-    null (floor) and GT-seed (per-prop upper bound = GT seed + that prop)."""
+    null (floor) and GT-seed (per-prop upper bound = GT seed + that prop). For the 'learned'
+    (end-to-end) tier, also add one box per external/end-to-end method (keyed by its name)."""
     label, box_cell, upper_cell = NICHE_TIERS[tier]
     cmp = res.get("compare", {})
     pooled = [s for c in cmp.values() for s in c.get("e_samples", {}).get(box_cell, [])]
     boxes = {label: np.asarray(pooled, float)} if pooled else {}
+    if tier == "learned":                                  # external/end-to-end models on this board
+        for nm in external_methods(res):
+            ext = [s for c in cmp.values() for s in c.get("e_samples", {}).get(nm, [])]
+            if ext:
+                boxes[nm] = np.asarray(ext, float)
     dashed = {}
     nulls = [c["e"]["null"] for c in cmp.values() if "null" in c.get("e", {})]
     uppers = [c["e"][upper_cell] for c in cmp.values() if upper_cell in c.get("e", {})]

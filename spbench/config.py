@@ -12,7 +12,8 @@ from .adapters import get_adapter
 
 
 def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, progress=True,
-                  compare=True, distributional=True, n_perm=None, perm_seed=0):
+                  compare=True, distributional=True, n_perm=None, perm_seed=0,
+                  external_models=None):
     """Run the MVP benchmark on a StandardData. Returns grids + attribution + leakage flags, and
     (compare=True) a comparison of every 2x2 cell to the no-effect baseline per perturbation:
     res['compare'][p] = {'e': {method: energy distance to observed}, 'gain': {method: e_null - e},
@@ -48,7 +49,12 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
         if compare and "_niches" in g:
             niches = g.pop("_niches")
             eval_X = niches.get("eval_X")                               # unified scoring-space transform
-            cmp[p] = compare_to_baseline(niches, residuals=residuals, eval_X=eval_X)  # niche: E-dist/gain + PCC-delta
+            # External / end-to-end models (CONCERT-style): their predicted bystander niche is
+            # scored on the SAME matched-n / gain / PCC-delta footing as the 2x2 cells via extra=.
+            extra = ({nm: m.predict_niche(data, p, edges) for nm, m in external_models.items()}
+                     if external_models else None)
+            cmp[p] = compare_to_baseline(niches, residuals=residuals, eval_X=eval_X,
+                                         extra=extra)                   # niche: E-dist/gain + PCC-delta
             seed_eval[p] = evaluate_seed(niches, eval_X=eval_X)         # seed: PCC-delta + MSE (direct)
         grids[p] = g
         attrib[p] = attribute(g)
