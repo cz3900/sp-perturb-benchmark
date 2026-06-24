@@ -41,22 +41,32 @@ def _apply_eval_X(A, eval_X):
     return A if eval_X is None else np.asarray(eval_X(A), float)
 
 
-def evaluate_seed(niches, eval_X=None):
-    """Direct seed score (decoupled from propagation): the MODEL seed (predicted perturbed-cell
-    expression) vs the observed perturbed cells. PCC-delta = direction of the gene-wise shift
-    (baseline = matched control cells); MSE = magnitude of the mean error. Both metrics come from
-    the registry.
+def evaluate_seed(niches, eval_X=None, repeats=20, seed=0, max_n=300):
+    """Direct seed score: MODEL seed vs observed perturbed cells. Returns PCC-delta (direction,
+    baseline=matched control), MSE (magnitude), AND `e_samples` = per-repeat matched-n energy
+    distance for the model seed and the null (control seed) — the seed box-plot data source
+    (NOTE: unlike compare_to_baseline, this nanmean is NOT a returned headline number — the seed
+    metrics are pcc_delta/mse, not an energy mean).
 
     eval_X (callable | None): unified scoring-space transform applied to pred/obs/ref before
-    scoring (default choice np.arcsinh), so all three live in the same variance-stabilized space
-    (pcc_delta is not cross-space robust). eval_X=None keeps the old raw-space behavior."""
+    scoring. repeats/seed/max_n control the matched-n energy resampling for `e_samples`."""
     obs = _apply_eval_X(niches.get("seed_obs", np.zeros((0, 0))), eval_X)
     pred = _apply_eval_X(niches.get("seed_pred", np.zeros((0, 0))), eval_X)
     ref = _apply_eval_X(niches.get("seed_ref", np.zeros((0, 0))), eval_X)
     if len(obs) == 0 or len(pred) == 0 or len(ref) == 0:
-        return {"pcc_delta": float("nan"), "mse": float("nan"), "n": int(len(obs))}
+        return {"pcc_delta": float("nan"), "mse": float("nan"), "n": int(len(obs)),
+                "e_samples": {}}
+    clouds = {"model": pred, "null": ref}
+    n = max(2, min(len(obs), len(pred), len(ref), max_n))
+    rng = np.random.default_rng(seed + 1)
+    samp = {k: [] for k in clouds}
+    for _ in range(repeats):
+        O = _sub(obs, n, rng)
+        for k, c in clouds.items():
+            samp[k].append(energy_distance(_sub(c, n, rng), O))
     return {"pcc_delta": get_metric("pcc_delta").compute(pred, obs, {"reference": ref}),
-            "mse": get_metric("mse").compute(pred, obs), "n": int(len(obs))}
+            "mse": get_metric("mse").compute(pred, obs), "n": int(len(obs)),
+            "e_samples": {k: list(v) for k, v in samp.items()}}
 
 
 def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300, extra=None, eval_X=None):

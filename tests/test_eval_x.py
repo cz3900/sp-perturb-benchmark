@@ -29,7 +29,7 @@ def test_apply_eval_x_callable_is_applied():
 def test_evaluate_seed_default_unchanged():
     n = _niches()
     out = evaluate_seed(n)
-    assert set(out) == {"pcc_delta", "mse", "n"}
+    assert set(out) == {"pcc_delta", "mse", "n", "e_samples"}
     assert out["n"] == 9
     assert np.isfinite(out["pcc_delta"])
     assert np.isfinite(out["mse"])

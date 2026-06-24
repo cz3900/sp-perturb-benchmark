@@ -28,3 +28,17 @@ def test_compare_returns_per_repeat_samples(synth):
         s = out["e_samples"][k]
         assert len(s) == 20
         assert np.isclose(np.nanmean(s), mean_e)
+
+
+from spbench.compare import evaluate_seed
+
+
+def test_evaluate_seed_returns_energy_samples(synth):
+    niches, _ = _niches(synth)
+    out = evaluate_seed(niches, repeats=15)
+    assert "e_samples" in out
+    assert set(out["e_samples"]) >= {"model", "null"}
+    assert len(out["e_samples"]["model"]) == 15
+    assert all(s >= 0 for s in out["e_samples"]["model"])
+    # old fields still present
+    assert "pcc_delta" in out and "mse" in out
