@@ -31,14 +31,28 @@ def _sub(A, n, rng):
     return A if len(A) <= n else A[rng.choice(len(A), n, replace=False)]
 
 
-def evaluate_seed(niches):
+def _apply_eval_X(A, eval_X):
+    """Push a cell array into the unified scoring space. eval_X=None -> identity (old behavior,
+    no copy). eval_X is a callable applied array-wise (default choice np.arcsinh) so that
+    pred / obs / ref are all compared in ONE common space — pcc_delta is not cross-space robust,
+    so its delta baseline (reference) must share the same transform as pred and obs. np.arcsinh
+    (not np.log1p) because the expression matrices are signed and log1p would NaN on values < -1."""
+    A = np.asarray(A, float)
+    return A if eval_X is None else np.asarray(eval_X(A), float)
+
+
+def evaluate_seed(niches, eval_X=None):
     """Direct seed score (decoupled from propagation): the MODEL seed (predicted perturbed-cell
     expression) vs the observed perturbed cells. PCC-delta = direction of the gene-wise shift
     (baseline = matched control cells); MSE = magnitude of the mean error. Both metrics come from
-    the registry."""
-    obs = np.asarray(niches.get("seed_obs", np.zeros((0, 0))), float)
-    pred = np.asarray(niches.get("seed_pred", np.zeros((0, 0))), float)
-    ref = np.asarray(niches.get("seed_ref", np.zeros((0, 0))), float)
+    the registry.
+
+    eval_X (callable | None): unified scoring-space transform applied to pred/obs/ref before
+    scoring (default choice np.arcsinh), so all three live in the same variance-stabilized space
+    (pcc_delta is not cross-space robust). eval_X=None keeps the old raw-space behavior."""
+    obs = _apply_eval_X(niches.get("seed_obs", np.zeros((0, 0))), eval_X)
+    pred = _apply_eval_X(niches.get("seed_pred", np.zeros((0, 0))), eval_X)
+    ref = _apply_eval_X(niches.get("seed_ref", np.zeros((0, 0))), eval_X)
     if len(obs) == 0 or len(pred) == 0 or len(ref) == 0:
         return {"pcc_delta": float("nan"), "mse": float("nan"), "n": int(len(obs))}
     return {"pcc_delta": get_metric("pcc_delta").compute(pred, obs, {"reference": ref}),
