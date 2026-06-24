@@ -8,6 +8,8 @@ import numpy as np
 # 2x2 method key -> niche-plot label. GCN = learned prop (model seed + GCN); Gaussian = baseline prop.
 PROP_LABELS = {"model+base": "Gaussian", "model+learned": "GCN",
                "GT+base": "Gaussian (GT seed)", "GT+learned": "GCN (GT seed)"}
+# dashed reference lines: no-effect null (gray) and oracle ceiling (teal)
+_DASH_COLORS = {"null": "#888888", "oracle": "#1d9e75"}
 
 
 def collect_prop_samples(res, box_methods=("model+base", "model+learned"),
@@ -40,3 +42,31 @@ def collect_seed_samples(res, model_label="seed model"):
     if null_p:
         dashed["null"] = float(np.nanmean(null_p))
     return boxes, dashed
+
+
+def _draw_boxes(ax, boxes, dashed, ylabel, title):
+    labels = list(boxes)
+    data = [np.log(np.clip(boxes[l], 1e-9, None)) for l in labels]
+    if data:
+        ax.boxplot(data, tick_labels=labels, showfliers=False)
+    for name, val in dashed.items():
+        ax.axhline(np.log(max(val, 1e-9)), ls="--", lw=1.2,
+                   color=_DASH_COLORS.get(name, "#888888"), label=name)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    if dashed:
+        ax.legend(fontsize=8, loc="best")
+    ax.tick_params(axis="x", rotation=30)
+
+
+def plot_seed_prop(res, figsize=(11, 4.2)):
+    """One figure, two box plots: Δseed (left) and Δniche (right). x = methods (GCN named),
+    box = pooled per-repeat log energy distance, dashed = null / oracle baselines."""
+    import matplotlib.pyplot as plt
+    sb, sd = collect_seed_samples(res)
+    pb, pd = collect_prop_samples(res)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+    _draw_boxes(ax1, sb, sd, "log E-distance", "seed (D1)")
+    _draw_boxes(ax2, pb, pd, "log E-distance", "niche (D2)")
+    fig.tight_layout()
+    return fig

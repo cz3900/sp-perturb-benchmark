@@ -19,3 +19,20 @@ def test_collect_seed_samples(synth):
     boxes, dashed = collect_seed_samples(res)
     assert len(boxes) >= 1
     assert "null" in dashed
+
+
+import matplotlib
+matplotlib.use("Agg")
+from spbench.plotting import plot_seed_prop
+
+
+def test_plot_seed_prop_returns_two_axes_with_gcn(synth):
+    res = run_benchmark(synth, perturbations=["P0"], gcn_kwargs=GCN_KW, progress=False)
+    fig = plot_seed_prop(res)
+    assert fig is not None
+    assert len(fig.axes) == 2
+    niche_labels = [t.get_text() for t in fig.axes[1].get_xticklabels()]
+    assert "GCN" in niche_labels
+    # seed (left) axis carries the seed-model box; niche (right) drew its dashed baselines (legend)
+    assert "seed model" in [t.get_text() for t in fig.axes[0].get_xticklabels()]
+    assert fig.axes[1].get_legend() is not None
