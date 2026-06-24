@@ -35,11 +35,19 @@ def test_plot_includes_external_box():
     import matplotlib; matplotlib.use("Agg")
     from spbench.config import run_benchmark
     from spbench.models.mock_end_to_end import MockEndToEnd
-    from spbench.plotting import collect_niche_tier
+    from spbench.plotting import collect_niche_tier, external_methods
     data = make_synthetic(0)
     p = data.perturbations()[0]
     res = run_benchmark(data, perturbations=[p], k=10, k_ref=5,
                         gcn_kwargs={"hidden": 8, "epochs": 3}, progress=False,
                         external_models={"mock": MockEndToEnd(noise=0.3, seed=0)})
     boxes, dashed = collect_niche_tier(res, "learned")
-    assert any("mock" in k for k in boxes)        # external model shows as its own box on the end-to-end board
+    # discriminating: 'mock' is an EXACT distinct box key (not just a substring of the GCN label),
+    # so the end-to-end board carries both the GCN-mock box and the external 'mock' box.
+    assert external_methods(res) == ["mock"]
+    assert "mock" in boxes and len(boxes) >= 2
+    # control: with no external_models there is no external box (locks the feature, not a substring)
+    res0 = run_benchmark(data, perturbations=[p], k=10, k_ref=5,
+                         gcn_kwargs={"hidden": 8, "epochs": 3}, progress=False)
+    b0, _ = collect_niche_tier(res0, "learned")
+    assert external_methods(res0) == [] and "mock" not in b0
