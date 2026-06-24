@@ -3,9 +3,10 @@ from .saunders import SaundersAdapter
 from .dhainaut import DhainautAdapter
 from .cheng import ChengAdapter
 from .shen import ShenAdapter
+from .binan import BinanTumorsAdapter
 
 _REGISTRY = {"saunders": SaundersAdapter, "dhainaut": DhainautAdapter,
-             "cheng": ChengAdapter, "shen": ShenAdapter}
+             "cheng": ChengAdapter, "shen": ShenAdapter, "binan_tumors": BinanTumorsAdapter}
 
 def get_adapter(name: str):
     return _REGISTRY[name]
