@@ -55,3 +55,50 @@ def test_export_to_scgen_h5_condition_map_and_drop(tmp_path):
         assert float(f["uns"].attrs["target_sum"]) == 1e4
         assert int(f["uns"].attrs["log1p"]) == 1
         assert np.allclose(np.array(f["X"]), lognorm_X[[0, 1, 3]])
+
+
+from spbench.models.scgen_model import ScgenSeedModel
+from spbench.models.concert_model import read_h5ad_X
+
+
+def _write_seed_dump(path, seed_pred, centers):
+    """Mock of run_scgen.write_seed_dump (G6.4): /X aligned to centers order + /obs/center_idx."""
+    with h5py.File(path, "w") as f:
+        f.create_dataset("X", data=np.asarray(seed_pred, float))
+        g_obs = f.create_group("obs")
+        g_obs.create_dataset("center_idx", data=np.asarray(centers, np.int64))
+
+
+def test_scgen_loader_serves_aligned_seed_array(tmp_path):
+    # offline runner output: 2 centers, 3 genes; rows already in centers order
+    seed_pred = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    centers = [0, 3]
+    p = tmp_path / "GeneA_seed.h5ad"
+    _write_seed_dump(str(p), seed_pred, centers)
+
+    model = ScgenSeedModel({"GeneA": str(p)}).fit(None)
+    # ABC signature: predict_seed(perturbation, reference_cells) -> the cached aligned array.
+    # reference_cells is ignored for the array's value (it is the offline-aligned seed_pred).
+    out = model.predict_seed("GeneA", np.zeros((5, 3)))
+    assert out.shape == (2, 3)
+    assert np.allclose(out, seed_pred)
+    assert np.allclose(read_h5ad_X(str(p)), seed_pred)   # reuses concert read_h5ad_X
+
+
+def test_scgen_loader_centers_accessor(tmp_path):
+    seed_pred = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    centers = [2, 7]
+    p = tmp_path / "GeneB_seed.h5ad"
+    _write_seed_dump(str(p), seed_pred, centers)
+    model = ScgenSeedModel({"GeneB": str(p)})
+    assert list(model.centers("GeneB")) == [2, 7]        # for fill_2x2 to align seed_obs/seed_ref
+
+
+def test_scgen_loader_caches_per_perturbation(tmp_path):
+    seed_pred = np.array([[1.0, 2.0]])
+    p = tmp_path / "G_seed.h5ad"
+    _write_seed_dump(str(p), seed_pred, [0])
+    model = ScgenSeedModel({"G": str(p)})
+    a = model.predict_seed("G", np.zeros((1, 2)))
+    b = model.predict_seed("G", np.zeros((1, 2)))
+    assert a is b                                        # second call hits the cache (same object)
