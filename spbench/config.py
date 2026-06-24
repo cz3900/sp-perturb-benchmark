@@ -4,6 +4,7 @@ from .graph import build_knn_graph
 from .harness import fill_2x2, _control_reference, _control_reference_aggregate, _control_residuals
 from .judge import attribute, leakage_pass
 from .compare import compare_to_baseline, evaluate_seed
+from .permutation import permutation_null
 from .models.trivial_seed import TrivialSeed
 from .models.gaussian_prop import GaussianProp
 from .models.gcn_prop import SimpleGCN
@@ -11,7 +12,7 @@ from .adapters import get_adapter
 
 
 def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, progress=True,
-                  compare=True, distributional=True):
+                  compare=True, distributional=True, n_perm=None, perm_seed=0):
     """Run the MVP benchmark on a StandardData. Returns grids + attribution + leakage flags, and
     (compare=True) a comparison of every 2x2 cell to the no-effect baseline per perturbation:
     res['compare'][p] = {'e': {method: energy distance to observed}, 'gain': {method: e_null - e},
@@ -57,6 +58,11 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
     if compare:
         res["compare"] = cmp
         res["seed"] = seed_eval
+    if n_perm is not None:
+        # Empirical permutation null per perturbation (Plan 3): reuse the SAME kNN `edges` built
+        # above so the niche graph is identical to the rest of the benchmark.
+        res["perm"] = {p: permutation_null(data, p, edges, n_perm=n_perm, seed=perm_seed)
+                       for p in perturbations}
     return res
 
 
