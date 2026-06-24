@@ -1,3 +1,15 @@
+"""Build notebooks/run_benchmark.ipynb (the NEW phase-1 pipeline demo).
+
+Constructs the notebook JSON programmatically (more robust than hand-editing JSON), then
+writes it next to this script. Run:  python notebooks/build_notebook.py
+
+The notebook demonstrates the refactored benchmark end-to-end on the Saunders slice:
+two-layer adapters, the {D1 self / D2 niche-expr / D3 niche-composition} output contract,
+sample-level aggregate control, the eval_X unified scoring space for scGEN, and the
+MC-spatial quadrant x dimension stratified report with the Inert quadrant as a negative
+control. Every code cell is defensive about the two OPTIONAL inputs (the scGEN dumps and the
+MC-spatial Dual_Metrics.csv) so the notebook still runs baseline-only when they are absent.
+"""
 import json, os
 
 cells = []
@@ -5,199 +17,349 @@ def md(t): cells.append({"cell_type": "markdown", "metadata": {}, "source": t})
 def code(t): cells.append({"cell_type": "code", "metadata": {}, "execution_count": None,
                            "outputs": [], "source": t})
 
-md("# Spatial perturbation benchmark — run\n"
+# ----------------------------------------------------------------------------- 0. title
+md("# Spatial perturbation benchmark — the phase-1 pipeline\n"
    "\n"
    "Evaluates how well a model predicts the **spatial effect of a CRISPR perturbation**: when a "
-   "gene is knocked out, how does the perturbed cell itself change (**seed**) and how does that "
-   "change spread to its spatial neighbours (**propagation**)?\n"
-   "\n"
-   "The same cell is never measured both perturbed and unperturbed (no paired before/after), so "
-   "everything is scored at the **distribution level** with the **energy distance (E-distance)**, "
-   "against a **control reference niche**. Run on the lab server (env `spatial-tumor-ai`).")
+   "gene is knocked out, how does the perturbed cell itself change, and how does that change "
+   "spread to its spatial neighbours? The same cell is never measured both perturbed and "
+   "unperturbed, so everything is scored at the **distribution level** against a **control "
+   "reference**. Run on the lab server (env `spatial-tumor-ai`), where the Saunders `.h5mu` "
+   "slices and the offline scGEN dumps live.")
 
-md("## 0. What is measured (read this first)\n"
+md("## 0. What's new in this refactor (read this first)\n"
    "\n"
-   "**Two halves of a perturbation effect**\n"
-   "- **seed** = how the *perturbed cell itself* changes.\n"
-   "- **propagation** = how that change spreads to its *spatial neighbours* (the niche).\n"
+   "**1. Two-layer adapters.** An *input* adapter (`SaundersAdapter`) normalises a raw `.h5mu` "
+   "slice into one `StandardData`. An *output* adapter (`adapters.internal_output.to_prediction`, "
+   "`models.scgen_model.ScgenSeedModel`) normalises every model's native output. Models never "
+   "touch each other's formats.\n"
    "\n"
-   "**The 2×2.** Every perturbation is scored in a grid of {seed source} × {propagation model}:\n"
+   "**2. The 3-dim output contract `{D1, D2, D3}`** (`spbench.prediction.StandardPrediction`). "
+   "Every prediction is expressed as up to three dims, and a model fills only the ones it covers "
+   "(`.covered_dims()` / `.as_dict()`):\n"
+   "- **D1 — self**: the perturbed cell's OWN expression shift (the seed).\n"
+   "- **D2 — niche expression**: the aggregated bystander-neighbour expression shift.\n"
+   "- **D3 — niche composition**: the neighbourhood cell-type composition (a simplex).\n"
+   "This is the **capability matrix**: scGEN is a D1-only model; the Gaussian/GCN propagation "
+   "baselines cover D2; D3 comes from the niche module. A model is only ever scored on the dims "
+   "it actually covers.\n"
    "\n"
-   "|                | baseline prop (Gaussian kernel) | learned prop (GCN) |\n"
-   "|----------------|---------------------------------|--------------------|\n"
-   "| **GT seed** (the true perturbed cell, an oracle) | `e1` | `e2` |\n"
-   "| **model seed** (predicted from control cells)    | `e3` | `e4` |\n"
+   "**3. Sample-level aggregate control** (`reference_aggregate.aggregate_control` -> "
+   "`harness._control_reference_aggregate`). The reference 'unperturbed' state is now a "
+   "per-cell-type aggregate over CONTROL cells only — no nearest-neighbour matched-control pairing "
+   "in feature space, so no matched-control leakage. `run_benchmark` uses this by default.\n"
    "\n"
-   "Each `e1..e4` is an **E-distance** between the *predicted* neighbour distribution and the "
-   "*observed perturbed* neighbour distribution. Lower = better. `e4` (model seed + learned prop, "
-   "aka `model+learned`) is the real, deployable score.\n"
+   "**4. `eval_X` — one unified scoring space.** PCC-delta is not cross-space robust, so the "
+   "prediction, the observed cells, and the delta baseline must all be compared in the SAME space. "
+   "For scGEN the natural space is its log-norm training space: we pass `eval_X=lognorm_X` (the "
+   "`build_lognorm_X` matrix) into `fill_2x2`, which slices the observed/reference seed cells into "
+   "that same matrix so scGEN's D1 is scored fairly.\n"
    "\n"
-   "**Energy distance.** For two groups of cells X (predicted) and Y (observed):\n"
-   "`E = 2·mean‖X−Y‖ − mean‖X−X'‖ − mean‖Y−Y'‖`. It is 0 when the two clouds overlap and needs "
-   "no cell-to-cell pairing — it compares whole distributions.\n"
-   "\n"
-   "**Distributional readout (why predictions get per-cell noise).** A model emits one vector "
-   "per cell — its conditional *mean*. Real niches are full-variance clouds (spread ~6), so "
-   "scoring a near-degenerate mean-field cloud with the energy distance (a *distributional* "
-   "metric) inflates it structurally, no matter how good the mean shift is. So before scoring, "
-   "each predicted cell gets a sampled **control residual** added (the deterministic analogue of "
-   "a generative model drawing per-cell samples): it restores realistic per-cell variance without "
-   "moving the mean, so E-distance measures the predicted *shift* fairly. Residuals come only from "
-   "control cells — never the observed niche — so they cannot leak. (`distributional=True`.)\n"
-   "\n"
-   "**Derived numbers (computed from `e1..e4`):**\n"
-   "- `seed_cost = e3 − e1` — penalty for *predicting* the seed vs knowing it (same propagation). "
-   ">0 means seed prediction hurts.\n"
-   "- `learned_value = e1 − e2` — how much the learned GCN beats the Gaussian baseline (same true "
-   "seed). >0 means learned propagation helps.\n"
-   "- `end_to_end = e4` — the deployable score.\n"
-   "- `leak_ok` — leakage audit. Propagation starts from a *control reference*, so if a GT-seed "
-   "cell (`e1`/`e2`) were ≈0 it would mean the model copied the observed niche (a leak). Both must "
-   "be clearly > 0.\n"
-   "\n"
-   "**The one comparison that matters — beat the no-effect baseline.** The 2×2 only compares the "
-   "four cells to *each other*; on its own it can't tell you whether *any* of them beats doing "
-   "nothing. So we add one more prediction in the **same currency** (E-distance to the observed "
-   "niche):\n"
-   "- `e_null` = E-distance(**control niche**, observed niche) = the score of the laziest guess, "
-   "'**the neighbours did not change**'. This is the bar to beat.\n"
-   "- `oracle` = best a *non-leaking* model could reach (perfect mean shift + control-population "
-   "variance) = a ceiling.\n"
-   "\n"
-   "Then the headline quantity is the **gain**:\n"
-   "\n"
-   "  `gain = e_null − e_method`  — **>0** the method beats 'no effect'; **<0** it is *worse* than "
-   "doing nothing; bigger = better. No ratios, no clipping. `gain(model+learned)` is the bottom "
-   "line (the deployable pipeline); `gain(oracle)` shows how much signal is recoverable at all.\n"
-   "\n"
-   "All of `e1..e4`, `e_null`, `oracle` are computed at a **matched sample size** (same n, same "
-   "observed subsample per repeat) so the energy distance's finite-sample bias cancels and the "
-   "gains are clean paired differences.\n"
-   "\n"
-   "**Two tasks, each with its own metric (decoupled).**\n"
-   "- **seed** (the perturbed cell's own change) is scored *directly*: `seed_pcc` = **PCC-delta** "
-   "= Pearson correlation between the predicted and true gene-wise shift (`perturbed − control`); "
-   "`seed_mse` = magnitude of the mean error. PCC-delta is bounded [−1,1] and self-anchored (0 = "
-   "no directional skill), so it sidesteps the energy distance's fragility.\n"
-   "- **propagation** (the niche) is scored with the energy distance / `gain` (above) **plus** a "
-   "niche **PCC-delta** (`niche_pcc`) — direction of the niche's gene-wise shift — as a robust "
-   "cross-check. Sanity: `oracle`'s niche PCC-delta ≈ 1, the `null`'s is undefined (flat shift).")
+   "**5. MC-spatial quadrant x dimension stratification.** MC-spatial flags, per guide, whether a "
+   "real **Self** (X) and/or **Niche** (Y) effect exists, giving four quadrants: **Both**, "
+   "**X-Only (Self)**, **Y-Only (Niche)**, **Inert**. We score **D1 only where there is Self "
+   "signal** (X-Only/Both), **D2 only where there is Niche signal** (Y-Only/Both), and use the "
+   "**Inert** quadrant as a rigorous **negative control** (a good model should predict ~no effect "
+   "there). This avoids diluting a niche score over perturbations that have no niche signal.")
 
-md("## 1. Imports")
-code("import matplotlib\n%matplotlib inline\n"
-     "from spbench.adapters import get_adapter\n"
+# ----------------------------------------------------------------------------- 1. config
+md("## 1. Config\n"
+   "All server-specific paths live here, at the top, so a server run only edits this one cell. "
+   "`SLICE_DIR` is the Saunders directory; `MAX_FILES` how many slices to pool. The two OPTIONAL "
+   "inputs — `SCGEN_DUMP_DIR` (offline `{P}_seed.h5ad` dumps) and `DUAL_METRICS_CSV` (MC-spatial "
+   "`*_Dual_Metrics.csv`) — may be left as `None`/missing; the notebook then runs baseline-only / "
+   "unstratified and says so explicitly.")
+code("from pathlib import Path\n"
+     "\n"
+     "# --- required: the Saunders slice(s) ---\n"
+     "SLICE_DIR = '/home/yiru/database/spatial_perturbed_processed/CRISPR_based/Saunders_2025_40513557'\n"
+     "MAX_FILES = 1                      # pool this many .h5mu slices (1 = a single slice)\n"
+     "COUNTS_LAYER = 'X'                 # raw-count layer for scGEN log-norm export (mod/rna/X)\n"
+     "\n"
+     "# --- optional input A: offline scGEN seed dumps ({P}_seed.h5ad), one per perturbation ---\n"
+     "SCGEN_DUMP_DIR = None             # e.g. '/home/yiru/scgen_dumps/Saunders_slice0'; None -> skip scGEN\n"
+     "\n"
+     "# --- optional input B: MC-spatial four-quadrant labels for this slice ---\n"
+     "DUAL_METRICS_CSV = None           # e.g. '/home/yiru/mc_spatial_out/slice0_Dual_Metrics.csv'; None -> unstratified\n"
+     "\n"
+     "# --- evaluation perturbation list (MC-spatial Self/Niche-significant guides for this slice) ---\n"
+     "EVAL = ['Pck1','Rrbp1','Hspd1','Psmc1','Sepp1','Bcl2l1','Vcp',\n"
+     "        'Ass1','Pten','Rrn3','Letm1','Hspa5','Sec61b','Rngtt']\n"
+     "\n"
+     "K_GRAPH, K_REF, NICHE_HOPS = 15, 5, 1\n"
+     "print('SLICE_DIR        =', SLICE_DIR)\n"
+     "print('SCGEN_DUMP_DIR   =', SCGEN_DUMP_DIR, '(scGEN D1 will run only if these dumps exist)')\n"
+     "print('DUAL_METRICS_CSV =', DUAL_METRICS_CSV, '(quadrant stratification only if present)')")
+
+# ----------------------------------------------------------------------------- imports
+md("## 1b. Imports")
+code("import matplotlib\n"
+     "%matplotlib inline\n"
+     "import numpy as np, pandas as pd\n"
+     "\n"
+     "from spbench.adapters.saunders import SaundersAdapter\n"
+     "from spbench.adapters.scgen_export import build_lognorm_X\n"
+     "from spbench.adapters.internal_output import to_prediction\n"
+     "from spbench.prediction import StandardPrediction\n"
+     "from spbench.graph import build_knn_graph\n"
+     "from spbench.niche import build_spatial_graph, compute_niche_composition\n"
+     "from spbench.reference_aggregate import aggregate_control\n"
      "from spbench.config import run_benchmark\n"
-     "from spbench.viz import (plot_2x2, plot_aggregate_2x2, plot_baseline_gain,\n"
-     "                         plot_gain_per_perturbation, plot_learned_value,\n"
-     "                         plot_significance_contrast)\n"
-     "import numpy as np, pandas as pd")
+     "from spbench.harness import (fill_2x2, _control_reference_aggregate, _control_residuals)\n"
+     "from spbench.compare import evaluate_seed\n"
+     "from spbench.models.trivial_seed import TrivialSeed\n"
+     "from spbench.models.gaussian_prop import GaussianProp\n"
+     "from spbench.models.gcn_prop import SimpleGCN\n"
+     "from spbench import mc_spatial_join as mcj\n"
+     "from spbench import mc_spatial_report as mcr")
 
+# ----------------------------------------------------------------------------- 2. load
 md("## 2. Load the data\n"
-   "The adapter reads the raw `.h5mu` slices and normalises them into one `StandardData` "
-   "(expression matrix, spatial coords, per-cell perturbation label, cell type, slice id). "
-   "`max_files` limits how many slices are pooled — raise it for more cells. Swap the adapter / "
-   "path here to run a different dataset.")
-code("DIR='/home/yiru/database/spatial_perturbed_processed/CRISPR_based/Saunders_2025_40513557'\n"
-     "data = get_adapter('saunders')(DIR, max_files=4).load()\n"
-     "print(data.n_cells, 'cells,', data.n_genes, 'genes,',\n"
-     "      len(data.perturbations()), 'perturbations')")
+   "`SaundersAdapter(SLICE_DIR, max_files=MAX_FILES, counts_layer='X').load()` reads the raw "
+   "`.h5mu` slice(s) and normalises them into one `StandardData`: `data.X` is the (z-scored) "
+   "`layers/raw_scaled` matrix; `counts_layer='X'` ALSO loads the raw integer counts into "
+   "`data.meta['counts']` (needed for scGEN's log-norm space in §6).")
+code("data = SaundersAdapter(SLICE_DIR, max_files=MAX_FILES, counts_layer=COUNTS_LAYER).load()\n"
+     "n_pert = len(data.perturbations())\n"
+     "print(f'{data.n_cells} cells, {data.n_genes} genes, {n_pert} perturbations, '\n"
+     "      f'{int(data.is_control.sum())} control cells, {int(data.is_perturbed.sum())} perturbed cells')\n"
+     "\n"
+     "# Keep only EVAL perturbations actually present in this slice (defensive).\n"
+     "present = set(data.perturbations())\n"
+     "EVAL = [p for p in EVAL if p in present]\n"
+     "print('evaluating', len(EVAL), 'perturbations present in this slice:', EVAL)\n"
+     "assert EVAL, 'none of the EVAL perturbations are present in this slice — check SLICE_DIR / EVAL'")
 
-md("## 3. Define the evaluation set\n"
-   "`SIGNIFICANT` = the perturbations MC-spatial flagged as having a real spatial effect "
-   "(permutation p<0.05). `NON_SIGNIFICANT` = a random sample of the **same size** from every "
-   "other perturbation — a proxy negative-control group (most perturbations have no spatial "
-   "signal). Evaluating both, balanced, lets us check whether the model helps *specifically* "
-   "where there is signal, or just everywhere (which would mean it is only a generic smoother).")
-code("SIGNIFICANT = ['Pck1','Rrbp1','Hspd1','Psmc1','Sepp1','Bcl2l1','Vcp',\n"
-     "               'Ass1','Pten','Rrn3','Letm1','Hspa5','Sec61b','Rngtt']\n"
-     "sig = [p for p in SIGNIFICANT if p in set(data.perturbations())]\n"
-     "others = [p for p in data.perturbations() if p not in set(SIGNIFICANT)]\n"
-     "rng = np.random.default_rng(0)   # fixed seed -> reproducible non-significant sample\n"
-     "NON_SIGNIFICANT = list(rng.choice(others, size=min(len(sig), len(others)), replace=False))\n"
-     "EVAL = sig + NON_SIGNIFICANT\n"
-     "print('evaluating', len(EVAL), '=', len(sig), 'significant +',\n"
-     "      len(NON_SIGNIFICANT), 'random non-significant')")
+# ----------------------------------------------------------------------------- 3. niche graph + composition
+md("## 3. Niche graph + cell-type composition (D3 input)\n"
+   "Two interchangeable spatial graphs, both returning a `(2, n_edges)` `[src, dst]` array built "
+   "WITHIN each slice (no cross-batch edges, no self-loops):\n"
+   "- `build_knn_graph(data, k)` — pure sklearn kNN (the harness/`run_benchmark` default).\n"
+   "- `build_spatial_graph(data, n_neighs)` — squidpy-backed (optional; needs squidpy installed).\n"
+   "\n"
+   "`compute_niche_composition(data, edges, hops)` then gives a `(n_cells, C)` row-simplex of each "
+   "cell's neighbourhood cell-type composition — the **D3** quantity. We build the kNN graph here "
+   "and reuse it everywhere below so the niche definition is consistent.")
+code("edges = build_knn_graph(data, k=K_GRAPH)\n"
+     "print('kNN graph:', edges.shape[1], 'directed edges')\n"
+     "\n"
+     "# Optional squidpy graph (same (2, n_edges) format); falls back to the kNN graph if squidpy\n"
+     "# is not installed in this env.\n"
+     "try:\n"
+     "    sq_edges = build_spatial_graph(data, n_neighs=K_GRAPH)\n"
+     "    print('squidpy spatial graph:', sq_edges.shape[1], 'edges (drop-in alternative to kNN)')\n"
+     "except Exception as e:\n"
+     "    print('squidpy graph unavailable (', type(e).__name__, '), using kNN graph only')\n"
+     "\n"
+     "comp = compute_niche_composition(data, edges, hops=NICHE_HOPS)   # (n_cells, C) D3 row-simplex\n"
+     "C = comp.shape[1]\n"
+     "print('niche composition (D3):', comp.shape, '->', C, 'cell types; row sums ~',\n"
+     "      float(np.nanmean(comp.sum(1)[comp.sum(1) > 0])))")
 
-md("## 4. Run the benchmark\n"
-   "For each perturbation this builds the spatial graph, defines the control reference niche and "
-   "the observed propagation ground truth, then fills the 2×2 by composing three models — a "
-   "**trivial seed** (control + global mean shift), a **Gaussian-kernel** baseline propagation, "
-   "and a self-supervised **GCN** learned propagation — and scores every cell with the "
-   "E-distance. `compare=True` also computes the no-effect baseline `e_null`, the `oracle` "
-   "ceiling, and the per-method **gain = e_null − e** (see section 0). (`k` = neighbours per cell; "
-   "`k_ref` = matched control cells per perturbed cell.)")
-code("res = run_benchmark(data, perturbations=EVAL, k=15, k_ref=5,\n"
-     "                    gcn_kwargs={'hidden':64,'epochs':30})")
+md("### How a model's output becomes a `StandardPrediction` (the output adapter)\n"
+   "`to_prediction(seed_out, prop_out, composition)` maps a model's native arrays onto the "
+   "`{D1, D2, D3}` contract: it mean-aggregates per-row seed/prop outputs to a single gene vector "
+   "and L1-normalises the composition to a simplex. `.covered_dims()` / `.as_dict()` then report "
+   "exactly which dims are filled — this is how the capability matrix is enforced per model.")
+code("# Illustration on one perturbation's cells (no scoring here — just the contract).\n"
+     "p0 = EVAL[0]\n"
+     "centers0 = np.where(data.perturbation == p0)[0]\n"
+     "seed_out0 = data.X[centers0]                         # stand-in seed rows (m, G)\n"
+     "comp0 = comp[centers0].mean(0)                       # mean neighbourhood composition (C,)\n"
+     "\n"
+     "pred_seed_only = to_prediction(seed_out=seed_out0)                  # a D1-only model (e.g. scGEN)\n"
+     "pred_full      = to_prediction(seed_out=seed_out0, prop_out=seed_out0, composition=comp0)\n"
+     "print(p0, 'seed-only model covers :', pred_seed_only.covered_dims())\n"
+     "print(p0, 'full   model covers    :', pred_full.covered_dims())\n"
+     "print('D3 is a simplex, sums to   :', round(float(pred_full.d3.sum()), 6))")
 
-md("## 5. Metric table\n"
-   "One row per perturbation, organised by the two decoupled tasks. **seed**: `seed_pcc` "
-   "(direction of the cell's own shift, −1..1, higher better), `seed_mse` (magnitude error, lower "
-   "better). **propagation (deployable model+learned)**: `niche_gain = e_null − e` (**>0 beats "
-   "'no effect'**), `niche_pcc` (direction of the niche shift). Context: `e_null` (baseline) and "
-   "`gain_oracle` (recoverable ceiling). Sorted by `niche_gain` (best first).")
-code("rows=[]\n"
+# ----------------------------------------------------------------------------- 4. MC-spatial quadrants
+md("## 4. MC-spatial quadrants (optional)\n"
+   "MC-spatial writes a `*_Dual_Metrics.csv` per slice with two axis p-values per guide: "
+   "`p_val_specificity` (X = a real **Self/D1** effect) and `p_val_global` (Y = a real "
+   "**Niche/D2** effect). `mc_spatial_join.load_dual_metrics(csv, p_cutoff, p_mode)` reads it "
+   "(stdlib `csv`, no pandas) and tags each perturbation with its quadrant — `BOTH`, `X_ONLY`, "
+   "`Y_ONLY`, `INERT` (label constants live in `mc_spatial_join`). If `DUAL_METRICS_CSV` is unset "
+   "or missing, we fall back to the unstratified EVAL list and clearly note that MC-spatial was "
+   "not provided.")
+code("QUADRANT_OF = {}        # perturbation -> quadrant label (empty => no MC-spatial labels)\n"
+     "HAVE_MC = bool(DUAL_METRICS_CSV) and Path(DUAL_METRICS_CSV).exists()\n"
+     "if HAVE_MC:\n"
+     "    dual = mcj.load_dual_metrics(DUAL_METRICS_CSV, p_cutoff=0.05, p_mode='raw')\n"
+     "    QUADRANT_OF = {d['perturbation']: d['quadrant'] for d in dual}\n"
+     "    from collections import Counter\n"
+     "    counts = Counter(QUADRANT_OF.get(p, mcj.UNKNOWN) for p in EVAL)\n"
+     "    print('MC-spatial quadrants for the EVAL guides:')\n"
+     "    for q in (mcj.BOTH, mcj.X_ONLY, mcj.Y_ONLY, mcj.INERT, mcj.UNKNOWN):\n"
+     "        if counts.get(q):\n"
+     "            print(f'  {q:18s}: {counts[q]}')\n"
+     "    print('  (Inert is the negative control; D1 is scored on Self/Both, D2 on Niche/Both.)')\n"
+     "else:\n"
+     "    print('NOTE: MC-spatial Dual_Metrics.csv not provided (DUAL_METRICS_CSV is unset/missing).')\n"
+     "    print('      -> running UNSTRATIFIED on the EVAL list; the §7 stratified report is skipped.')")
+
+# ----------------------------------------------------------------------------- 5. baselines
+md("## 5. Run the baselines (D1 seed + D2 niche)\n"
+   "`run_benchmark` now uses the **sample-level aggregate control** by default "
+   "(`_control_reference_aggregate`) — no matched-control feature pairing. For each perturbation "
+   "it composes a **TrivialSeed** (D1 floor), a **Gaussian-kernel** baseline propagation and a "
+   "self-supervised **GCN** learned propagation (both D2), and scores them. It returns:\n"
+   "- `res['seed'][p]` — the **D1** seed score (`pcc_delta` = direction of the cell's own shift, "
+   "`mse` = magnitude).\n"
+   "- `res['compare'][p]` — the **D2** niche score (`gain`/`pcc`/`e` per 2x2 method; the deployable "
+   "cell is `model+learned`). `gain = e_null - e` > 0 beats the no-effect baseline.")
+code("res = run_benchmark(data, perturbations=EVAL, k=K_GRAPH, k_ref=K_REF,\n"
+     "                    gcn_kwargs={'hidden': 64, 'epochs': 30})\n"
+     "\n"
+     "rows = []\n"
      "for p in EVAL:\n"
-     "    c=res['compare'][p]; s=res['seed'][p]\n"
-     "    rows.append(dict(perturbation=p, sig=p in set(SIGNIFICANT),\n"
-     "                     seed_pcc=s['pcc_delta'], seed_mse=s['mse'],\n"
-     "                     niche_gain=c['gain']['model+learned'], niche_pcc=c['pcc']['model+learned'],\n"
-     "                     e_null=c['e']['null'], gain_oracle=c['gain'].get('oracle'),\n"
-     "                     leak_ok=res['leakage_pass'][p]))\n"
-     "df=pd.DataFrame(rows).sort_values('niche_gain', ascending=False); df")
+     "    s = res['seed'][p]; c = res['compare'][p]\n"
+     "    rows.append(dict(\n"
+     "        perturbation=p,\n"
+     "        quadrant=QUADRANT_OF.get(p, mcj.UNKNOWN),\n"
+     "        d1_trivial_pcc=s['pcc_delta'], d1_trivial_mse=s['mse'],    # D1 from TrivialSeed\n"
+     "        d2_gain=c['gain']['model+learned'], d2_pcc=c['pcc']['model+learned'],  # D2 deployable\n"
+     "        d2_gain_oracle=c['gain'].get('oracle'), e_null=c['e']['null'],\n"
+     "        leak_ok=res['leakage_pass'][p],\n"
+     "    ))\n"
+     "base_df = pd.DataFrame(rows).sort_values('d2_gain', ascending=False).reset_index(drop=True)\n"
+     "base_df")
 
-md("## 6. Result figures\n"
-   "The headline is whether each method beats the no-effect baseline (`gain > 0`). The figures "
-   "aggregate `gain` across perturbations and, for the deployable model, break it down per gene "
-   "and contrast significant vs non-significant.")
+# ----------------------------------------------------------------------------- 6. scGEN
+md("## 6. scGEN — a D1-only conditional model (optional)\n"
+   "scGEN is run OFFLINE in its own env; per perturbation it dumps `{P}_seed.h5ad` (a "
+   "per-center-aligned predicted-seed array). `ScgenSeedModel({P: path})` loads it and serves it "
+   "as the model seed; `.centers(P)` gives the StandardData center indices the rows align to. We "
+   "score scGEN's **D1** in its own log-norm space: build `lognorm_X = build_lognorm_X(data)` "
+   "(raw counts -> normalize_total 1e4 + log1p) and pass `eval_X=lognorm_X` into `fill_2x2`. "
+   "`fill_2x2` then slices the observed/reference seed cells into that same matrix (the three are "
+   "co-spaced) and carries `eval_X=None` downstream, so `evaluate_seed(niches)` scores fairly.\n"
+   "\n"
+   "If `SCGEN_DUMP_DIR` has no `{P}_seed.h5ad` for any EVAL perturbation, this cell is a clearly "
+   "marked no-op and the notebook stays baseline-only.")
+code("from spbench.models.scgen_model import ScgenSeedModel\n"
+     "\n"
+     "scgen_paths = {}\n"
+     "if SCGEN_DUMP_DIR:\n"
+     "    for p in EVAL:\n"
+     "        f = Path(SCGEN_DUMP_DIR) / f'{p}_seed.h5ad'\n"
+     "        if f.exists():\n"
+     "            scgen_paths[p] = str(f)\n"
+     "\n"
+     "scgen_d1 = {}        # perturbation -> {'pcc_delta','mse','n'} for scGEN's D1\n"
+     "if scgen_paths:\n"
+     "    print(f'scGEN dumps found for {len(scgen_paths)}/{len(EVAL)} perturbations.')\n"
+     "    # scGEN's seed_pred lives in the log-norm space -> score there via eval_X=lognorm_X.\n"
+     "    lognorm_X = build_lognorm_X(data)                  # (n_cells, n_genes) log-norm matrix\n"
+     "    X_ref_agg = _control_reference_aggregate(data, edges)   # aggregate-control reference (G1)\n"
+     "    resid = _control_residuals(data)\n"
+     "    base_prop = GaussianProp().fit(data, edges)\n"
+     "    learned_prop = SimpleGCN(hidden=64, epochs=30).fit(data, edges)\n"
+     "    for p, path in scgen_paths.items():\n"
+     "        seed_model = ScgenSeedModel({p: path})         # offline loader; predict_seed is 2-arg\n"
+     "        grid = fill_2x2(data, p, edges, seed_model, base_prop, learned_prop, k_ref=K_REF,\n"
+     "                        X_ref=X_ref_agg, return_niches=True, residuals=resid,\n"
+     "                        eval_X=lognorm_X)              # log-norm scoring space for D1\n"
+     "        niches = grid['_niches']                        # eval_X already consumed into the matrix\n"
+     "        scgen_d1[p] = evaluate_seed(niches, eval_X=niches.get('eval_X'))   # carried eval_X is None here\n"
+     "    sc_df = pd.DataFrame([dict(perturbation=p, quadrant=QUADRANT_OF.get(p, mcj.UNKNOWN),\n"
+     "                               scgen_d1_pcc=v['pcc_delta'], scgen_d1_mse=v['mse'])\n"
+     "                          for p, v in scgen_d1.items()])\n"
+     "    base_df = base_df.merge(sc_df.drop(columns='quadrant'), on='perturbation', how='left')\n"
+     "    display(sc_df.sort_values('scgen_d1_pcc', ascending=False).reset_index(drop=True))\n"
+     "else:\n"
+     "    print('NOTE: no scGEN {P}_seed.h5ad dumps found (SCGEN_DUMP_DIR unset/empty).')\n"
+     "    print('      -> running BASELINE-ONLY; scGEN D1 columns are omitted.')")
 
-md("### Headline — each method vs the no-effect baseline\n"
-   "One box (+ one point per perturbation) per method, of **`gain = e_null − e`**. The solid line "
-   "at **0 is the no-effect baseline**: a method is useful only where its points sit **above** it. "
-   "The dashed line is the **oracle ceiling** (best a non-leaking model could reach). One glance: "
-   "does any method beat doing nothing, by how much, and how far from the ceiling.")
-code("plot_baseline_gain(res).savefig('fig_gain_aggregate.png', dpi=140); None")
+md("### Combined per-perturbation results table\n"
+   "One row per perturbation: the baselines' D1 (TrivialSeed `pcc_delta`/`mse`) and D2 "
+   "(`model+learned` gain/pcc), plus scGEN's D1 when its dumps were found. This is the "
+   "per-perturbation evidence behind the stratified capability matrix in §7.")
+code("base_df")
 
-md("### Summary 2×2 — mean gain over baseline\n"
-   "All perturbations collapsed into one grid: each cell is the per-gene `gain = e_null − e` "
-   "**averaged** across genes (so it is normalised to each gene's own baseline). **Green/>0 beats "
-   "'no effect', red/<0 loses.** The **column difference** is the mean learned_value (learned vs "
-   "Gaussian prop), the **row difference** is the mean seed_cost. Each cell also shows how many of "
-   "the N perturbations individually beat the baseline — read this together with the spread in the "
-   "headline box plot, since a single mean can hide a half-win/half-lose split.")
-code("plot_aggregate_2x2(res).savefig('fig_aggregate_2x2.png', dpi=140); None")
+# ----------------------------------------------------------------------------- 7. capability matrix + stratified report
+md("## 7. Capability matrix + stratified report\n"
+   "We join the MC-spatial quadrant onto each model's per-dimension scores and report, **per "
+   "dimension, only over the quadrants where that dimension has signal**, with **Inert as the "
+   "negative control**:\n"
+   "- **D1** (self) — scored on **X-Only + Both** (`mc_spatial_report.DIMENSION_QUADRANTS['d1']`).\n"
+   "- **D2** (niche) — scored on **Y-Only + Both** (`DIMENSION_QUADRANTS['d2']`).\n"
+   "- **Inert** — negative control: a good model has `mean_gain ~ 0` there; a positive gain in "
+   "Inert is a hallucinated effect.\n"
+   "\n"
+   "`mc_spatial_report.stratified_report(records, dim_gain_fields)` consumes records that carry a "
+   "`quadrant` label (from `join_quadrants`) plus per-dimension **gain** fields and returns the "
+   "`dimension x quadrant_group` rows (`mean_gain`, `frac_beat`, `is_negative_control`). We score "
+   "D1 via its own gain (TrivialSeed D1 vs scGEN D1) and D2 via the niche gain. If MC-spatial was "
+   "not provided, we show an unstratified capability matrix instead.")
+code("def _capability_matrix(df):\n"
+     "    \"\"\"Which model covers which dimension (mean score over the rows we have).\"\"\"\n"
+     "    cm = {'TrivialSeed': {'D1': float(np.nanmean(df['d1_trivial_pcc'])), 'D2': np.nan, 'D3': np.nan},\n"
+     "          'Gaussian/GCN (model+learned)': {'D1': np.nan,\n"
+     "                                           'D2': float(np.nanmean(df['d2_gain'])), 'D3': np.nan},\n"
+     "          'niche-composition module': {'D1': np.nan, 'D2': np.nan, 'D3': 'simplex (built in §3)'}}\n"
+     "    if 'scgen_d1_pcc' in df.columns:\n"
+     "        cm['scGEN'] = {'D1': float(np.nanmean(df['scgen_d1_pcc'])), 'D2': np.nan, 'D3': np.nan}\n"
+     "    return pd.DataFrame(cm).T\n"
+     "\n"
+     "print('Capability matrix (mean over EVAL; D1=pcc_delta, D2=niche gain; NaN = dim not covered):')\n"
+     "display(_capability_matrix(base_df))")
+code("if HAVE_MC:\n"
+     "    # Per-perturbation D1 gain = scGEN D1 pcc - TrivialSeed D1 pcc (how much scGEN beats the\n"
+     "    # floor on the cell's own shift); D2 gain = the niche gain over the no-effect baseline.\n"
+     "    records = []\n"
+     "    for _, r in base_df.iterrows():\n"
+     "        d1_gain = (r['scgen_d1_pcc'] - r['d1_trivial_pcc']) if 'scgen_d1_pcc' in base_df.columns \\\n"
+     "            and pd.notna(r.get('scgen_d1_pcc')) else r['d1_trivial_pcc']\n"
+     "        records.append({'perturbation': r['perturbation'],\n"
+     "                        'gain_d1': float(d1_gain), 'gain_d2': float(r['d2_gain'])})\n"
+     "    # Attach quadrants from the CSV (left join; absent guides -> 'Unknown').\n"
+     "    records = mcj.join_quadrants(records, DUAL_METRICS_CSV, key='perturbation', p_mode='raw')\n"
+     "    report = mcr.stratified_report(records, dim_gain_fields={'d1': 'gain_d1', 'd2': 'gain_d2'})\n"
+     "    rep_df = pd.DataFrame(report)\n"
+     "    print('Stratified report (D1 on Self/Both, D2 on Niche/Both, Inert = negative control):')\n"
+     "    display(rep_df)\n"
+     "    print('Read: mean_gain should be > 0 in the signal rows and ~ 0 in the is_negative_control'\n"
+     "          ' (Inert) rows.')\n"
+     "else:\n"
+     "    print('MC-spatial not provided -> stratified report skipped. Unstratified capability'\n"
+     "          ' matrix above is the summary; rerun with DUAL_METRICS_CSV set for the quadrant'\n"
+     "          ' x dimension breakdown with the Inert negative control.')")
 
-md("### Per gene — deployable model vs baseline\n"
-   "`gain = e_null − e[model+learned]` for every perturbation, sorted, coloured by significance. "
-   "**Right of the line (>0) = the deployable pipeline predicts this gene's niche better than "
-   "assuming 'no effect'.** Shows *which* genes (if any) it wins on, and whether they are the "
-   "MC-significant ones.")
-code("plot_gain_per_perturbation(res, SIGNIFICANT).savefig('fig_gain_per_pert.png', dpi=140); None")
+# ----------------------------------------------------------------------------- 8. bottom line
+md("## 8. Bottom line — how to read it\n"
+   "- **Capability matrix.** Each model is scored only on the dims it covers: scGEN on **D1**, the "
+   "Gaussian/GCN propagation on **D2**, the niche module supplies **D3**. NaN means 'dim not "
+   "covered', not 'failed'.\n"
+   "- **scGEN vs TrivialSeed on D1.** scGEN is a conditional model; it should **beat TrivialSeed "
+   "on Self/Both** (positive `gain_d1`) and sit **≈ the baseline on Inert** (`mean_gain ~ 0` in "
+   "the negative-control row). A large positive D1 gain in the Inert row would mean scGEN is "
+   "hallucinating an effect where MC-spatial found none.\n"
+   "- **D2 niche gain.** `model+learned` `gain > 0` beats predicting 'the neighbours did not "
+   "change', and it should be concentrated in the **Niche/Both** quadrants, not in Inert.\n"
+   "- **eval_X.** scGEN's D1 is scored in its log-norm space; the baselines' D1 is in `data.X` "
+   "space — compare each model to its own control delta within the stratified report, not the raw "
+   "numbers across spaces.")
+code("print('Per-dimension coverage this run:')\n"
+     "print('  D1 (self)        : TrivialSeed' + (', scGEN' if 'scgen_d1_pcc' in base_df.columns else '')\n"
+     "      + '  (scored on Self/Both quadrants)')\n"
+     "print('  D2 (niche expr)  : Gaussian + GCN (model+learned)  (scored on Niche/Both quadrants)')\n"
+     "print('  D3 (niche comp)  : compute_niche_composition simplex, shape', comp.shape)\n"
+     "n_d2_win = int((base_df['d2_gain'] > 0).sum())\n"
+     "print(f'\\nD2: {n_d2_win}/{len(base_df)} perturbations beat the no-effect baseline (gain>0).')\n"
+     "if 'scgen_d1_pcc' in base_df.columns:\n"
+     "    better = base_df['scgen_d1_pcc'] > base_df['d1_trivial_pcc']\n"
+     "    print(f'D1: scGEN beats TrivialSeed on {int(better.sum())}/{int(better.notna().sum())} '\n"
+     "          'perturbations (pcc_delta).')\n"
+     "if not HAVE_MC:\n"
+     "    print('\\n(MC-spatial labels not provided -> the Inert negative control was not evaluated.)')")
 
-md("### Diagnostic — is the learned advantage signal-specific?\n"
-   "`learned_value = e1 − e2` (GCN vs Gaussian, holding the oracle seed) for significant vs "
-   "non-significant groups, with a sign-test. **If the significant group is not clearly higher, "
-   "the GCN's edge over Gaussian is generic** (a better smoother), not specific to real spatial "
-   "signal.")
-code("plot_significance_contrast(res, SIGNIFICANT).savefig('fig_signal_specificity.png', dpi=140); None")
-
-md("### Single-gene 2×2 (explainer, not a result)\n"
-   "What one perturbation's 2×2 grid of E-distances looks like — useful to understand the layout. "
-   "Read it together with `e_null` (the baseline) for that gene, not in isolation.")
-code("plot_2x2(res['grids'][EVAL[0]], title=EVAL[0])")
-
-md("## 7. Bottom line\n"
-   "Count how many perturbations the deployable pipeline actually beats the baseline on "
-   "(`gain_deploy > 0`), and whether they are the MC-significant ones. `learned_value > 0` alone "
-   "does **not** prove signal-specificity — confirm with the contrast figure and a future "
-   "label-permutation control.")
-code("g = {p: res['compare'][p]['gain']['model+learned'] for p in EVAL}\n"
-     "wins = [p for p in EVAL if g[p] > 0]\n"
-     "print(f'{len(wins)}/{len(EVAL)} perturbations beat the no-effect baseline:', wins)\n"
-     "print('  of which MC-significant:', [p for p in wins if p in set(SIGNIFICANT)])")
-
-nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3",
-      "language": "python", "name": "python3"}, "language_info": {"name": "python"}},
+# ----------------------------------------------------------------------------- write
+nb = {"cells": cells,
+      "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python",
+                                  "name": "python3"},
+                   "language_info": {"name": "python"}},
       "nbformat": 4, "nbformat_minor": 5}
-out = os.path.join(os.path.dirname(__file__), "run_benchmark.ipynb")
+out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_benchmark.ipynb")
 json.dump(nb, open(out, "w"), ensure_ascii=False, indent=1)
-print("wrote", out)
+print("wrote", out, "with", len(cells), "cells")
