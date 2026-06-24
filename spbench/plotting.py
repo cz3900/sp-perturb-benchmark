@@ -2,14 +2,37 @@
 
 Each method's box = its pooled per-repeat matched-n energy distances (from `e_samples`).
 GCN is the learned-prop method (`model+learned`); shown named "GCN" in the niche plot.
-Dashed lines = no-effect null and oracle ceiling (mean energy)."""
+Dashed lines = no-effect null floor (gray) and the per-prop GT-seed upper bound (teal)."""
 import numpy as np
 
 # 2x2 method key -> niche-plot label. GCN = learned prop (model seed + GCN); Gaussian = baseline prop.
 PROP_LABELS = {"model+base": "Gaussian", "model+learned": "GCN",
                "GT+base": "Gaussian (GT seed)", "GT+learned": "GCN (GT seed)"}
-# dashed reference lines: no-effect null (gray) and oracle ceiling (teal)
-_DASH_COLORS = {"null": "#888888", "oracle": "#1d9e75"}
+# dashed reference lines: no-effect null floor (gray) and GT-seed upper bound (teal)
+_DASH_COLORS = {"null (floor)": "#888888", "GT-seed (upper)": "#1d9e75"}
+
+# niche board per prop tier: (box label, box 2x2 cell, upper-bound 2x2 cell = GT seed + that prop)
+NICHE_TIERS = {
+    "base":    ("Gaussian (seed-only)",   "model+base",    "GT+base"),     # tier 1: seed-only + Gaussian, upper = cell-1
+    "learned": ("GCN (end-to-end mock)",  "model+learned", "GT+learned"),  # tier 2: end-to-end mock, upper = cell-2
+}
+
+
+def collect_niche_tier(res, tier):
+    """One niche board: box = pooled per-repeat energy of the tier's model cell; dashed =
+    null (floor) and GT-seed (per-prop upper bound = GT seed + that prop)."""
+    label, box_cell, upper_cell = NICHE_TIERS[tier]
+    cmp = res.get("compare", {})
+    pooled = [s for c in cmp.values() for s in c.get("e_samples", {}).get(box_cell, [])]
+    boxes = {label: np.asarray(pooled, float)} if pooled else {}
+    dashed = {}
+    nulls = [c["e"]["null"] for c in cmp.values() if "null" in c.get("e", {})]
+    uppers = [c["e"][upper_cell] for c in cmp.values() if upper_cell in c.get("e", {})]
+    if nulls:
+        dashed["null (floor)"] = float(np.nanmean(nulls))
+    if uppers:
+        dashed["GT-seed (upper)"] = float(np.nanmean(uppers))
+    return boxes, dashed
 
 
 def collect_prop_samples(res, box_methods=("model+base", "model+learned"),
@@ -32,7 +55,8 @@ def collect_prop_samples(res, box_methods=("model+base", "model+learned"),
 
 
 def collect_seed_samples(res, model_label="seed model"):
-    """{label: pooled per-repeat energy} for the model seed, plus {'null': mean} dashed."""
+    """{label: pooled per-repeat energy} for the model seed, plus {'null (floor)': mean}
+    dashed (seed board has a floor only, no upper bound: GT seed = observed -> energy 0)."""
     boxes, dashed = {}, {}
     seed = res.get("seed", {})
     pooled = [s for v in seed.values() for s in v.get("e_samples", {}).get("model", [])]
@@ -40,7 +64,7 @@ def collect_seed_samples(res, model_label="seed model"):
         boxes[model_label] = np.asarray(pooled, float)
     null_p = [s for v in seed.values() for s in v.get("e_samples", {}).get("null", [])]
     if null_p:
-        dashed["null"] = float(np.nanmean(null_p))
+        dashed["null (floor)"] = float(np.nanmean(null_p))
     return boxes, dashed
 
 
@@ -59,14 +83,16 @@ def _draw_boxes(ax, boxes, dashed, ylabel, title):
     ax.tick_params(axis="x", rotation=30)
 
 
-def plot_seed_prop(res, figsize=(11, 4.2)):
-    """One figure, two box plots: Δseed (left) and Δniche (right). x = methods (GCN named),
-    box = pooled per-repeat log energy distance, dashed = null / oracle baselines."""
+def plot_seed_prop(res, figsize=(15, 4.3)):
+    """Three boards: seed (all models, floor only), niche seed-only+Gaussian (upper=cell-1),
+    niche end-to-end/GCN-mock (upper=cell-2). log(E-distance), lower=better."""
     import matplotlib.pyplot as plt
     sb, sd = collect_seed_samples(res)
-    pb, pd = collect_prop_samples(res)
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
-    _draw_boxes(ax1, sb, sd, "log E-distance", "seed (D1)")
-    _draw_boxes(ax2, pb, pd, "log E-distance", "niche (D2)")
+    b1, d1 = collect_niche_tier(res, "base")
+    b2, d2 = collect_niche_tier(res, "learned")
+    fig, (ax0, ax1, ax2) = plt.subplots(1, 3, figsize=figsize)
+    _draw_boxes(ax0, sb, sd, "log E-distance", "seed — all models (floor = null)")
+    _draw_boxes(ax1, b1, d1, "log E-distance", "niche · seed-only + Gaussian")
+    _draw_boxes(ax2, b2, d2, "log E-distance", "niche · end-to-end (GCN mock)")
     fig.tight_layout()
     return fig
