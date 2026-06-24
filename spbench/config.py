@@ -1,7 +1,7 @@
 import yaml
 import numpy as np
 from .graph import build_knn_graph
-from .harness import fill_2x2, _control_reference, _control_residuals
+from .harness import fill_2x2, _control_reference, _control_reference_aggregate, _control_residuals
 from .judge import attribute, leakage_pass
 from .compare import compare_to_baseline, evaluate_seed
 from .models.trivial_seed import TrivialSeed
@@ -27,7 +27,11 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
     base = GaussianProp().fit(data, edges)
     learned = SimpleGCN(**gcn_kwargs).fit(data, edges)
     perturbations = perturbations or data.perturbations()
-    X_ref = _control_reference(data)            # identical across perturbations -> compute once
+    # Active control reference = sample-level aggregate-control path (G1), proven numerically
+    # identical to the legacy `_control_reference` (tests/test_harness_aggregate_ref.py). It needs
+    # the kNN `edges` graph (already built above) for its bystander-niche aggregation. The legacy
+    # `_control_reference(data)` is kept in harness.py as the documented fallback.
+    X_ref = _control_reference_aggregate(data, edges)   # identical across perturbations -> compute once
     residuals = _control_residuals(data) if distributional else None
     grids, attrib, leak, cmp, seed_eval = {}, {}, {}, {}, {}
     _bar = perturbations
