@@ -3,6 +3,7 @@ from .graph import neighbors_of
 from .reference import match_reference_centers
 from .propagation_gt import propagation_gt
 from .metrics import get_metric
+from .reference_aggregate import aggregate_control
 
 def _bystanders(data, center, edges):
     nb = neighbors_of(center, edges)
@@ -21,6 +22,19 @@ def _control_reference(data):
         m = ctrl & (data.cell_type == ct)
         if m.any():
             X_ref[data.cell_type == ct] = data.X[m].mean(0)
+    return X_ref
+
+def _control_reference_aggregate(data, edges):
+    """Aggregate-control version of `_control_reference` (G1). Builds the per-cell reference
+    matrix by broadcasting each cell_type's CONTROL-cell aggregate mean (from
+    `reference_aggregate.aggregate_control`) back to every cell of that type. Same numbers as
+    `_control_reference`, but sourced through the aggregate-control path so the new pipeline
+    never touches matched-control feature-space pairing. The legacy `_control_reference` is kept
+    for fallback / regression comparison."""
+    agg = aggregate_control(data, edges)
+    X_ref = np.empty((data.n_cells, data.n_genes), float)
+    for ct in agg.cell_types:
+        X_ref[data.cell_type == ct] = agg.expr[ct]
     return X_ref
 
 def _control_residuals(data):
