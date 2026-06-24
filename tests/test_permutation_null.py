@@ -26,16 +26,30 @@ def _spatial(n_per=40, planted=True, seed=0):
             X[idx] += 3.0
     return d, edges
 
-def test_planted_perturbation_has_low_p():
-    d, edges = _spatial(planted=True, seed=1)
-    r = permutation_null(d, "P0", edges, n_perm=40, seed=0)
-    assert np.isfinite(r["real"]) and r["null"]
-    assert r["p"] <= 0.2
+def test_planted_perturbation_low_p_across_seeds():
+    # strong planted niche shift -> consistently low p (no cherry-picked seed)
+    ps = []
+    for s in range(8):
+        d, edges = _spatial(planted=True, seed=s)
+        r = permutation_null(d, "P0", edges, n_perm=40, seed=0)
+        assert np.isfinite(r["real"]) and r["null"]
+        ps.append(r["p"])
+    ps = np.array(ps)
+    assert ps.mean() <= 0.15
+    assert (ps <= 0.25).all()
 
-def test_inert_perturbation_has_high_p():
-    d, edges = _spatial(planted=False, seed=2)
-    r = permutation_null(d, "P0", edges, n_perm=40, seed=0)
-    assert r["p"] >= 0.2
+def test_inert_perturbation_not_biased_low_across_seeds():
+    # the OLD control-reference null pushed even inert perturbations to p~0.05-0.15 (false
+    # significance). The two-sample relabeling null is exchangeable under H0 -> p ~uniform (mean
+    # ~0.5). This locks the bias fix: inert p must NOT be systematically low.
+    ps = []
+    for s in range(8):
+        d, edges = _spatial(planted=False, seed=s)
+        r = permutation_null(d, "P0", edges, n_perm=40, seed=0)
+        ps.append(r["p"])
+    ps = np.array(ps)
+    assert ps.mean() >= 0.30
+    assert np.median(ps) >= 0.20
 
 def test_empty_perturbation_returns_nan():
     d, edges = _spatial(planted=False, seed=3)
