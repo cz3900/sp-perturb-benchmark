@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from spbench.synthetic import make_synthetic_with_effects
 from spbench.graph import build_knn_graph, neighbors_of
+from spbench.niche import compute_niche_composition
 from spbench.propagation_gt import propagation_gt
 from spbench.compare import compare_to_baseline
 from spbench.harness import _control_residuals
@@ -95,3 +96,38 @@ def test_uninjected_dimension_is_near_zero():
     centers = np.where(d.perturbation == p)[0]
     nb = _bystanders(d, centers, edges)
     assert abs(d.X[nb, quiet].mean() - ctrl[:, quiet].mean()) < 0.5
+
+
+def test_d3_composition_recovered_for_significant_zero_for_inert():
+    """D3 (niche composition): the pipeline's compute_niche_composition path must RECOVER the
+    injected over-enrichment of `d3_cell_type` among the neighbours of each significant
+    perturbation's centers, and judge the inert perturbation effect-free.
+
+    We build the graph, compute the per-cell niche cell-type composition, and score the
+    comp_l1 (TV) distance between the perturbed centers' niche compositions and the control
+    reference niche. It must be LARGE (> 0.15) for each significant perturbation and ~0
+    (< 0.10) for the inert one, with each significant distance strictly above the inert one.
+    Sanity: this would fail if D3 recovery were broken — with no composition enrichment
+    injected (d3_extra=0) the significant distances collapse to <0.06 (verified)."""
+    d = make_synthetic_with_effects(seed=0, grid=24)
+    eff = d.meta["effects"]
+    edges = build_knn_graph(d, k=8)
+    comp = compute_niche_composition(d, edges)          # (n_cells, C) row-simplex niches
+    comp_l1 = get_metric("comp_l1")
+    ref_comp = comp[d.is_control]                        # control/reference niche
+
+    inert = eff["inert"][0]
+    inert_centers = np.where(d.perturbation == inert)[0]
+    inert_dist = comp_l1.compute(comp[inert_centers], ref_comp)
+    assert inert_dist < 0.10                             # inert: no composition effect
+
+    for p in eff["significant"]:
+        centers = np.where(d.perturbation == p)[0]
+        sig_dist = comp_l1.compute(comp[centers], ref_comp)
+        assert sig_dist > 0.15                           # significant: D3 recovered
+        assert sig_dist > inert_dist                     # and strictly above the inert floor
+
+        # the recovered enrichment is on the *injected* cell type, not some other one
+        cats = sorted(set(d.cell_type))
+        ci = cats.index(eff["spec"][p]["d3_cell_type"])
+        assert comp[centers].mean(0)[ci] > ref_comp.mean(0)[ci] + 0.1

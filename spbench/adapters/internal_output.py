@@ -20,8 +20,9 @@ def _aggregate(arr: Optional[np.ndarray]) -> Optional[np.ndarray]:
 
 
 def _to_simplex(comp: Optional[np.ndarray]) -> Optional[np.ndarray]:
-    """Normalize a composition vector (C,) to sum-1 (simplex). Passthrough if already
-    sums to ~1. Raises ValueError on a zero/negative-mass vector (undefined composition)."""
+    """Normalize a composition vector (C,) to sum-1 (simplex). Always divides by the total
+    mass (a no-op when the input already sums to ~1). Raises ValueError on a zero/negative-mass
+    vector (undefined composition)."""
     if comp is None:
         return None
     c = np.asarray(comp, float)
