@@ -42,8 +42,9 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
                      return_niches=compare, residuals=residuals)
         if compare and "_niches" in g:
             niches = g.pop("_niches")
-            cmp[p] = compare_to_baseline(niches, residuals=residuals)   # niche: E-distance/gain + PCC-delta
-            seed_eval[p] = evaluate_seed(niches)                        # seed: PCC-delta + MSE (direct)
+            eval_X = niches.get("eval_X")                               # unified scoring-space transform
+            cmp[p] = compare_to_baseline(niches, residuals=residuals, eval_X=eval_X)  # niche: E-dist/gain + PCC-delta
+            seed_eval[p] = evaluate_seed(niches, eval_X=eval_X)         # seed: PCC-delta + MSE (direct)
         grids[p] = g
         attrib[p] = attribute(g)
         leak[p] = leakage_pass(g)

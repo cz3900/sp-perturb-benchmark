@@ -71,7 +71,7 @@ def _draw_residuals(pools, cell_types, rng):
     return out
 
 def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop, k_ref=5,
-             X_ref=None, return_niches=False, residuals=None, noise_seed=0):
+             X_ref=None, return_niches=False, residuals=None, noise_seed=0, eval_X=None):
     """Fill the seed×propagation 2×2 for one perturbation.
     Rows = {GT seed, Model seed}, Cols = {baseline prop, learned prop}.
     Each cell scores propagation E-distance vs the observed perturbed-niche distribution.
@@ -129,5 +129,6 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
         grid["_niches"] = {"observed": observed, "reference": gt["reference_niche"],
                            "1": cells["1"], "2": cells["2"], "3": cells["3"], "4": cells["4"],
                            "seed_obs": data.X[centers], "seed_pred": seed_pred,
-                           "seed_ref": data.X[seed_ref_idx]}
+                           "seed_ref": data.X[seed_ref_idx],
+                           "eval_X": eval_X}   # unified scoring-space transform, carried downstream
     return grid
