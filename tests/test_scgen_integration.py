@@ -109,7 +109,7 @@ from spbench.harness import fill_2x2
 from spbench.compare import evaluate_seed
 from spbench.synthetic import make_synthetic
 from spbench.graph import build_knn_graph
-from spbench.reference import match_reference_centers
+from spbench.reference_aggregate import control_reference_centers
 
 
 class _ConstSeed:
@@ -137,7 +137,7 @@ def test_fill_2x2_eval_X_switches_seed_obs_ref_space():
     n = grid["_niches"]
 
     centers = np.where(data.perturbation == P)[0]
-    refs = match_reference_centers(data, centers, k=5)     # k=5 == fill_2x2's default k_ref
+    refs = control_reference_centers(data, centers)        # fill_2x2's aggregate-control reference     (all same-type controls, no longer k-matched)
     seed_ref_idx = np.unique(np.concatenate(refs))
     assert np.allclose(n["seed_obs"], eval_X[centers])     # observed centers in eval_X space
     assert np.allclose(n["seed_ref"], eval_X[seed_ref_idx])
@@ -264,7 +264,7 @@ def test_scgen_end_to_end_export_load_score(tmp_path):
     n = grid["_niches"]
     assert n["seed_pred"].shape == (len(centers), data.n_genes)
     assert np.allclose(n["seed_obs"], lognorm_X[centers])          # obs in eval_X (log-norm) space
-    refs = match_reference_centers(data, centers, k=5)             # k=5 == fill_2x2's default k_ref
+    refs = control_reference_centers(data, centers)        # fill_2x2's aggregate-control reference             (all same-type controls, no longer k-matched)
     seed_ref_idx = np.unique(np.concatenate(refs))
     assert np.allclose(n["seed_ref"], lognorm_X[seed_ref_idx])     # ref in eval_X space
 

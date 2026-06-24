@@ -1,9 +1,8 @@
 import numpy as np
 from .graph import neighbors_of
-from .reference import match_reference_centers
 from .propagation_gt import propagation_gt
 from .metrics import get_metric
-from .reference_aggregate import aggregate_control
+from .reference_aggregate import aggregate_control, control_reference_centers
 
 def _bystanders(data, center, edges):
     nb = neighbors_of(center, edges)
@@ -90,7 +89,7 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
     gt = propagation_gt(data, perturbation, edges, k_ref=k_ref)
     observed = gt["perturbed_niche"]
 
-    refs = match_reference_centers(data, centers, k=k_ref)
+    refs = control_reference_centers(data, centers)   # aggregate control: same-cell-type control cells, no feature match
     if X_ref is None:
         X_ref = _control_reference(data)   # propagation starts from the control niche, NOT the observed one
 

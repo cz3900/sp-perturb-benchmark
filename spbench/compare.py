@@ -7,7 +7,7 @@ baseline (`e_null`) and oracle ceiling, the gain, and the seed/niche scores.
 
 Each entry is an energy distance `e` between a *prediction* and the *observed* perturbed niche
 (small e = the prediction is close to reality). The four 2x2 cells are predictions; `null` is the
-laziest prediction ('the neighbours did not change' = the matched control niche); `oracle` is the
+laziest prediction ('the neighbours did not change' = the aggregate same-type control niche); `oracle` is the
 best a non-leaking model could do (perfect mean shift + control-population variance) = a ceiling.
 
 The headline quantity is the *gain* over the baseline:
