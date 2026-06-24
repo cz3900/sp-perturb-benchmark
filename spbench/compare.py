@@ -59,7 +59,7 @@ def evaluate_seed(niches, eval_X=None):
             "mse": get_metric("mse").compute(pred, obs), "n": int(len(obs))}
 
 
-def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300, extra=None):
+def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300, extra=None, eval_X=None):
     """Matched-n energy distance of every 2x2 cell, the no-effect baseline, and an oracle ceiling
     to the observed niche, plus gain = e_null - e_method and a niche PCC-delta per method.
 
@@ -97,9 +97,14 @@ def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300, e
     e = {k: float(np.nanmean(v)) for k, v in acc.items()}
     null = e["null"]
     gain = {k: null - e[k] for k in clouds}
-    # PCC-delta of the niche shift per method (registered metric; reference passed via context)
+    # PCC-delta of the niche shift per method, scored in the unified eval_X space: pred/obs/ref must
+    # share one transform (pcc_delta is not cross-space robust). energy/gain above stay in raw space
+    # (residual variance is calibrated there; matched-n bias-cancellation must not move space).
     pccm = get_metric("pcc_delta")
-    pcc = {k: pccm.compute(c, obs, {"reference": ref}) for k, c in clouds.items()}
+    obs_x = _apply_eval_X(obs, eval_X)
+    ref_x = _apply_eval_X(ref, eval_X)
+    pcc = {k: pccm.compute(_apply_eval_X(c, eval_X), obs_x, {"reference": ref_x})
+           for k, c in clouds.items()}
     # 'real effect' = the no-effect baseline is itself clearly far from observed (vs the oracle floor)
     floor = e.get("oracle", 0.0)
     has_effect = bool(null > 2 * floor) if "oracle" in e else bool(null > 0)
