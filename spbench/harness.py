@@ -94,6 +94,20 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
     if X_ref is None:
         X_ref = _control_reference(data)   # propagation starts from the control niche, NOT the observed one
 
+    # ScgenSeedModel (and any loader exposing `.centers()`) caches a per-center-ALIGNED
+    # (n_centers, G) seed array; predict_seed IGNORES reference_cells and returns the WHOLE array,
+    # so the per-`rc` `predict_seed(...).mean(0)` path below would collapse it to one global-mean
+    # vector broadcast to every center, destroying the per-center alignment (the whole point of
+    # /obs/center_idx). When the model is per-center-aligned, build a {center_idx -> its own cached
+    # row} map and feed EACH center its OWN row as the seed. Ordinary seed models (TrivialSeed etc.,
+    # no `.centers()`) keep the unchanged matched-control `predict_seed(...).mean(0)` behavior.
+    per_center_seed = None
+    if hasattr(seed_model, "centers"):
+        cached = np.asarray(seed_model.predict_seed(perturbation, data.X), float)  # (n_centers, G)
+        cidx = np.asarray(seed_model.centers(perturbation))                        # aligns cached rows
+        row_of = {int(ci): i for i, ci in enumerate(cidx)}
+        per_center_seed = {int(c): cached[row_of[int(c)]] for c in centers}
+
     def collect(use_gt_seed, prop_model):
         rng = np.random.default_rng(noise_seed)   # identical residual draws across the 4 cells
         preds = []
@@ -103,6 +117,8 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
                 continue
             if use_gt_seed:
                 seed_state = data.X[c]                                     # oracle: true perturbed center
+            elif per_center_seed is not None:
+                seed_state = per_center_seed[int(c)]                       # this center's OWN cached row
             else:
                 # model seed predicts from MATCHED CONTROL cells, never the center's own value
                 seed_state = seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
@@ -122,9 +138,15 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
     if return_niches:
         # seed evaluation data: model-seed prediction vs the observed perturbed centers, with the
         # matched control cells as the shift baseline (scored directly, not through the niche).
-        seed_pred = (np.array([seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
-                               for rc in refs]) if len(centers)
-                     else np.zeros((0, data.n_genes)))
+        # For per-center-aligned loaders, seed_pred is each center's OWN cached row (same alignment
+        # as the propagation loop); otherwise the per-`rc` matched-control mean (unchanged).
+        if not len(centers):
+            seed_pred = np.zeros((0, data.n_genes))
+        elif per_center_seed is not None:
+            seed_pred = np.array([per_center_seed[int(c)] for c in centers])
+        else:
+            seed_pred = np.array([seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
+                                  for rc in refs])
         seed_ref_idx = np.unique(np.concatenate(refs)) if len(refs) else np.array([], int)
         # eval_X is dual-semantic (cross-task convention #1, pcc_delta is NOT space-robust):
         #   - np.ndarray (G6 scGEN log-norm matrix): the model's seed_pred already lives in this

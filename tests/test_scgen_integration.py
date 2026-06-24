@@ -273,3 +273,40 @@ def test_scgen_end_to_end_export_load_score(tmp_path):
     assert np.isfinite(res["mse"]) and res["mse"] >= 0
     assert res["n"] == len(centers)
     assert np.isfinite(res["pcc_delta"]) or np.isnan(res["pcc_delta"])
+
+
+def test_scgen_per_center_seed_survives_fill_2x2(tmp_path):
+    """Regression for design must-fix #2: ScgenSeedModel's cached (n_centers, G) array is per-center
+    aligned (via /obs/center_idx). fill_2x2 must propagate EACH center's OWN cached row as that
+    center's seed, NOT collapse the whole array to one global-mean vector broadcast everywhere
+    (which is what the per-`rc` `predict_seed(...).mean(0)` path did). With DISTINCT per-center rows,
+    a collapse makes every seed_pred row identical; the per-center alignment must keep them distinct.
+    """
+    data = _counts_data()
+    edges = build_knn_graph(data, k=6)
+    P = "GeneA"
+    centers = np.where(data.perturbation == P)[0]
+    G = data.n_genes
+
+    # DISTINCT per-center rows: row for center index c = a vector unique to c (NOT all equal).
+    # Dump rows are written in a SHUFFLED center order to prove alignment goes through
+    # /obs/center_idx, not positional luck (np.where gives ascending order).
+    dump_centers = centers[::-1].copy()                       # reversed -> != np.where order
+    dump_rows = np.array([np.full(G, float(c + 1)) for c in dump_centers])   # row value encodes its center
+    seed_dump = tmp_path / f"{P}_seed.h5ad"
+    _write_seed_dump(str(seed_dump), dump_rows, dump_centers)
+
+    model = ScgenSeedModel({P: str(seed_dump)}).fit(None)
+    prop = _IdentityProp()
+    grid = fill_2x2(data, P, edges, model, prop, prop, return_niches=True)
+    seed_pred = grid["_niches"]["seed_pred"]
+
+    # Expected: seed_pred row i (for center centers[i]) == that center's own cached row, which by
+    # construction is full(G, centers[i] + 1). Aligned to np.where(data.perturbation==P)[0] order.
+    expected = np.array([np.full(G, float(c + 1)) for c in centers])
+    assert seed_pred.shape == (len(centers), G)
+    assert np.allclose(seed_pred, expected), "per-center cached rows must survive into seed_pred"
+
+    # The collapse signature: with the old global-mean path every row is identical. The distinct
+    # per-center rows here have different per-center values, so they MUST NOT all be equal.
+    assert not np.allclose(seed_pred, seed_pred[0]), "seed_pred collapsed to one broadcast vector"
