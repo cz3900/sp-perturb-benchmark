@@ -7,3 +7,6 @@ fig_*.png
 saunders_stats/
 .DS_Store
 .ipynb_checkpoints/
+
+# server-side reproduction working dir (data/outputs, not code)
+runs/
