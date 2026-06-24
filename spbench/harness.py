@@ -119,7 +119,8 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
             elif per_center_seed is not None:
                 seed_state = per_center_seed[int(c)]                       # this center's OWN cached row
             else:
-                # model seed predicts from MATCHED CONTROL cells, never the center's own value
+                # model seed predicts from the ALL same-cell-type CONTROL cells (aggregate control,
+                # no feature matching), never the center's own value -> one seed per cell type
                 seed_state = seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
             pred = prop_model.propagate(X_ref, edges, c, seed_state, nb)
             if residuals is not None:                                      # distributional readout
