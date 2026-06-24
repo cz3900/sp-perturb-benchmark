@@ -70,11 +70,13 @@ def collect_seed_samples(res, model_label="seed model"):
 
 def _draw_boxes(ax, boxes, dashed, ylabel, title):
     labels = list(boxes)
-    data = [np.log(np.clip(boxes[l], 1e-9, None)) for l in labels]
+    # linear E-distance (energy >= 0, no log): niche E < 1 would be negative in log space,
+    # which is confusing; energy is always non-negative so plot it directly.
+    data = [np.asarray(boxes[l], float) for l in labels]
     if data:
         ax.boxplot(data, tick_labels=labels, showfliers=False)
     for name, val in dashed.items():
-        ax.axhline(np.log(max(val, 1e-9)), ls="--", lw=1.2,
+        ax.axhline(val, ls="--", lw=1.2,
                    color=_DASH_COLORS.get(name, "#888888"), label=name)
     ax.set_ylabel(ylabel)
     ax.set_title(title)
@@ -85,14 +87,14 @@ def _draw_boxes(ax, boxes, dashed, ylabel, title):
 
 def plot_seed_prop(res, figsize=(15, 4.3)):
     """Three boards: seed (all models, floor only), niche seed-only+Gaussian (upper=cell-1),
-    niche end-to-end/GCN-mock (upper=cell-2). log(E-distance), lower=better."""
+    niche end-to-end/GCN-mock (upper=cell-2). E-distance (linear, >=0), lower=better."""
     import matplotlib.pyplot as plt
     sb, sd = collect_seed_samples(res)
     b1, d1 = collect_niche_tier(res, "base")
     b2, d2 = collect_niche_tier(res, "learned")
     fig, (ax0, ax1, ax2) = plt.subplots(1, 3, figsize=figsize)
-    _draw_boxes(ax0, sb, sd, "log E-distance", "seed — all models (floor = null)")
-    _draw_boxes(ax1, b1, d1, "log E-distance", "niche · seed-only + Gaussian")
-    _draw_boxes(ax2, b2, d2, "log E-distance", "niche · end-to-end (GCN mock)")
+    _draw_boxes(ax0, sb, sd, "E-distance", "seed — all models (floor = null)")
+    _draw_boxes(ax1, b1, d1, "E-distance", "niche · seed-only + Gaussian")
+    _draw_boxes(ax2, b2, d2, "E-distance", "niche · end-to-end (GCN mock)")
     fig.tight_layout()
     return fig
