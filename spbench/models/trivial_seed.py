@@ -10,7 +10,7 @@ class TrivialSeed(SeedModel):
     name = "trivial_seed"
 
     def fit(self, train):
-        ctrl_mean = train.X[train.is_control].mean(0)
+        ctrl_mean = train.X[train.control_pool].mean(0)
         shifts = []
         for p in train.perturbations():
             shifts.append(train.X[train.perturbation == p].mean(0) - ctrl_mean)

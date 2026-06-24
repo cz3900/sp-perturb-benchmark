@@ -37,7 +37,7 @@ def aggregate_control(data, edges, min_control: int = 1) -> AggregateControl:
     the fallback when a cell type has fewer than `min_control` control cells."""
     cell_types = np.unique(data.cell_type)            # already sorted
     ct_index = {ct: i for i, ct in enumerate(cell_types)}
-    ctrl = data.is_control
+    ctrl = data.control_pool
     gmean = data.X[ctrl].mean(0) if ctrl.any() else data.X.mean(0)
 
     expr, niche_comp, niche_expr = {}, {}, {}
@@ -86,7 +86,7 @@ def control_reference_centers(data, centers):
     list aligned to `centers`, matching the `match_reference_centers` interface so harness /
     propagation_gt swap it in directly (same-type centers share one array — cheap, read-only).
     """
-    ctrl_idx = np.where(data.is_control)[0]
+    ctrl_idx = np.where(data.control_pool)[0]
     by_type, out = {}, []
     for c in centers:
         ct = data.cell_type[c]

@@ -14,7 +14,7 @@ def _control_reference(data):
     observed matrix, so a prediction can never trivially reproduce the observed perturbed niche
     (which would be leakage). With a control reference the seed shift = perturbed - control is
     real, and the predicted niche is genuinely compared against the observed perturbed niche."""
-    ctrl = data.is_control
+    ctrl = data.control_pool
     global_mean = data.X[ctrl].mean(0) if ctrl.any() else data.X.mean(0)
     X_ref = np.tile(global_mean, (data.n_cells, 1)).astype(float)
     for ct in np.unique(data.cell_type):
@@ -48,7 +48,7 @@ def _control_residuals(data):
     restores realistic per-cell biological variance without moving the mean, so the energy
     distance measures the predicted SHIFT fairly. Residuals come only from CONTROL cells, never
     from the observed perturbed niche, so they cannot leak."""
-    ctrl = data.is_control
+    ctrl = data.control_pool
     pools = {}
     gmean = data.X[ctrl].mean(0) if ctrl.any() else data.X.mean(0)
     pools[None] = (data.X[ctrl] - gmean) if ctrl.any() else (data.X - gmean)

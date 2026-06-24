@@ -35,6 +35,21 @@ class StandardData:
     def is_perturbed(self) -> np.ndarray:
         return ~self.is_control & ~self.is_unlabeled
 
+    @property
+    def control_pool(self) -> np.ndarray:
+        """Boolean mask of cells used as the unperturbed CONTROL reference: 'control' (NTC) cells
+        when present; else fall back to 'none' (unlabeled) cells (datasets without NTC, e.g. Shen);
+        else all cells (degenerate)."""
+        if self.is_control.any():
+            return self.is_control
+        if self.is_unlabeled.any():
+            return self.is_unlabeled
+        return np.ones(self.n_cells, dtype=bool)
+
+    @property
+    def has_ntc(self) -> bool:
+        return bool(self.is_control.any())
+
     def perturbations(self) -> list:
         return sorted(set(self.perturbation[self.is_perturbed]))
 
