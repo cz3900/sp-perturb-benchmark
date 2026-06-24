@@ -172,3 +172,51 @@ def test_evaluate_seed_finite_under_eval_X():
     res = evaluate_seed(grid["_niches"])
     assert np.isfinite(res["mse"])
     assert res["n"] == int(len(centers))
+
+
+# --- G6.4: offline runner pure functions (loaded by path; must NOT import scgen) ---
+import importlib.util
+import os
+
+_RUNNER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "scgen", "run_scgen.py")
+
+
+def _load_runner():
+    spec = importlib.util.spec_from_file_location("run_scgen", _RUNNER)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)                          # must NOT import scgen at module level
+    return mod
+
+
+def test_aggregate_control_predict_maps_celltype_means():
+    runner = _load_runner()
+    # 3 centers, cell types [T, B, T]; per-cell-type predicted profile bank
+    center_cell_types = np.array(["T", "B", "T"])
+    ct_profiles = {"T": np.array([1.0, 1.0, 1.0]), "B": np.array([9.0, 9.0, 9.0])}
+    seed_pred = runner.aggregate_control_predict(center_cell_types, ct_profiles)
+    assert seed_pred.shape == (3, 3)
+    assert np.allclose(seed_pred[0], [1.0, 1.0, 1.0])    # T center -> T aggregate profile
+    assert np.allclose(seed_pred[1], [9.0, 9.0, 9.0])    # B center -> B aggregate profile
+    assert np.allclose(seed_pred[2], [1.0, 1.0, 1.0])    # second T center -> same T profile
+
+
+def test_aggregate_control_predict_falls_back_to_global_for_missing_ct():
+    runner = _load_runner()
+    center_cell_types = np.array(["T", "Z"])             # Z has no per-ct profile
+    ct_profiles = {"T": np.array([2.0, 2.0]), None: np.array([5.0, 5.0])}
+    seed_pred = runner.aggregate_control_predict(center_cell_types, ct_profiles)
+    assert np.allclose(seed_pred[0], [2.0, 2.0])
+    assert np.allclose(seed_pred[1], [5.0, 5.0])         # global (None) fallback
+
+
+def test_write_seed_dump_roundtrips_for_loader(tmp_path):
+    runner = _load_runner()
+    seed_pred = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+    centers = np.array([0, 3])
+    p = tmp_path / "GeneA_seed.h5ad"
+    runner.write_seed_dump(str(p), seed_pred, centers)
+    # the loader from G6.2 must read it back identically
+    from spbench.models.scgen_model import ScgenSeedModel
+    model = ScgenSeedModel({"GeneA": str(p)})
+    assert np.allclose(model.predict_seed("GeneA", np.zeros((2, 3))), seed_pred)
+    assert list(model.centers("GeneA")) == [0, 3]
