@@ -57,7 +57,7 @@ class SimpleGCN(PropModel):
         torch.manual_seed(self.seed)
         net = _Net(train.n_genes, self.hidden)
         A = self._adj(edges, train.n_cells)
-        x = torch.tensor(train.X, dtype=torch.float32)
+        x = torch.tensor(np.asarray(train.X, dtype=np.float32))   # asarray: torch rejects e.g. uint32 counts
         with torch.no_grad():
             return float(((net(x, A) - x) ** 2).mean())
 
@@ -65,7 +65,7 @@ class SimpleGCN(PropModel):
         torch.manual_seed(self.seed)
         self.net_ = _Net(train.n_genes, self.hidden)
         A = self._adj(edges, train.n_cells)
-        x = torch.tensor(train.X, dtype=torch.float32)
+        x = torch.tensor(np.asarray(train.X, dtype=np.float32))   # asarray: torch rejects e.g. uint32 counts
         opt = torch.optim.Adam(self.net_.parameters(), lr=self.lr, weight_decay=1e-4)
         for _ in range(self.epochs):
             opt.zero_grad()

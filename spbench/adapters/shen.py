@@ -52,7 +52,8 @@ class ShenAdapter(DatasetAdapter):
                     genes = [g.decode() if isinstance(g, bytes) else g for g in rna["var/_index"][:]]
         n = int(sum(x.shape[0] for x in Xs))
         return StandardData(
-            X=np.vstack(Xs), coords=np.vstack(coords),
+            X=np.vstack(Xs).astype(np.float32),   # h5mu stores counts as uint32; expression must be float
+            coords=np.vstack(coords),
             perturbation=np.concatenate(pert).astype(str),
             cell_type=np.full(n, self.cell_type),
             batch=np.concatenate(batch).astype(str),
