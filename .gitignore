@@ -4,6 +4,7 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 fig_*.png
+methods_demo.png
 saunders_stats/
 .DS_Store
 .ipynb_checkpoints/
