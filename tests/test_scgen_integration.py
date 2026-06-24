@@ -220,3 +220,56 @@ def test_write_seed_dump_roundtrips_for_loader(tmp_path):
     model = ScgenSeedModel({"GeneA": str(p)})
     assert np.allclose(model.predict_seed("GeneA", np.zeros((2, 3))), seed_pred)
     assert list(model.centers("GeneA")) == [0, 3]
+
+
+# --- G6.5: end-to-end integration (export -> mock seed dump -> loader -> fill_2x2(eval_X) ->
+#           evaluate_seed), threading G6.1-G6.4 together WITHOUT the scgen conda env. ---
+
+
+def _counts_data():
+    rng = np.random.default_rng(3)
+    n, g = 40, 6
+    counts = rng.integers(0, 20, size=(n, g)).astype(float)
+    coords = rng.uniform(0, 100, size=(n, 2))
+    pert = np.array([UNLABELED] * n, dtype=object)
+    pert[:6] = "GeneA"; pert[6:18] = CONTROL                # 6 perturbed centers, 12 controls
+    cell_type = np.where(np.arange(n) % 2 == 0, "T", "B")
+    return StandardData(
+        X=rng.normal(size=(n, g)),                          # z-scored-like; eval_X overrides it
+        coords=coords, perturbation=pert.astype(str),
+        cell_type=cell_type.astype(str), batch=np.array(["s1"] * n),
+        gene_names=[f"g{i}" for i in range(g)], meta={"counts": counts})
+
+
+def test_scgen_end_to_end_export_load_score(tmp_path):
+    data = _counts_data()
+    edges = build_knn_graph(data, k=6)
+    P = "GeneA"
+    lognorm_X = build_lognorm_X(data)
+
+    # 1. export adapter (G6.1): integer counts -> log-norm 2-condition AnnData
+    info = export_to_scgen_h5(data, P, lognorm_X, str(tmp_path / f"{P}.h5ad"))
+    assert info["n_stim"] == 6 and info["n_ctrl"] == 12
+
+    # 2. mock offline runner output (G6.4 write_seed_dump, via the G6.2 test helper):
+    #    a "perfect" aligned seed_pred = the observed centers in log-norm space.
+    centers = np.where(data.perturbation == P)[0]
+    seed_dump = tmp_path / f"{P}_seed.h5ad"
+    _write_seed_dump(str(seed_dump), lognorm_X[centers], centers)
+
+    # 3. loader (G6.2) -> fill_2x2 with eval_X = lognorm_X (G6.3)
+    model = ScgenSeedModel({P: str(seed_dump)}).fit(None)
+    prop = _IdentityProp()
+    grid = fill_2x2(data, P, edges, model, prop, prop, return_niches=True, eval_X=lognorm_X)
+    n = grid["_niches"]
+    assert n["seed_pred"].shape == (len(centers), data.n_genes)
+    assert np.allclose(n["seed_obs"], lognorm_X[centers])          # obs in eval_X (log-norm) space
+    refs = match_reference_centers(data, centers, k=5)             # k=5 == fill_2x2's default k_ref
+    seed_ref_idx = np.unique(np.concatenate(refs))
+    assert np.allclose(n["seed_ref"], lognorm_X[seed_ref_idx])     # ref in eval_X space
+
+    # 4. evaluate_seed: finite mse + well-defined pcc in the unified log-norm space
+    res = evaluate_seed(n)
+    assert np.isfinite(res["mse"]) and res["mse"] >= 0
+    assert res["n"] == len(centers)
+    assert np.isfinite(res["pcc_delta"]) or np.isnan(res["pcc_delta"])
