@@ -12,4 +12,4 @@ def get_metric(name: str) -> Metric:
 def list_metrics() -> list:
     return sorted(_REGISTRY)
 
-from . import energy, rho_niche, moran, pcc_delta, mse  # noqa: E402  (self-register)
+from . import energy, rho_niche, moran, pcc_delta, mse, comp_l1  # noqa: E402  (self-register)
