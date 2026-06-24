@@ -253,18 +253,24 @@ code("res = run_benchmark(data, perturbations=EVAL, k=K_GRAPH, k_ref=K_REF,\n"
 
 # ----------------------------------------------------------------------------- 5b. method box plots
 md("## 5b. Seed / niche method-comparison box plots (the headline view)\n"
-   "Mirrors the CONCERT-style figure: **one box per method**, where the box = that method's pooled "
-   "**per-repeat matched-n energy distance** (`res[...]['e_samples']`). **Left = seed (D1)**, "
-   "**right = niche (D2)**; the two dashed lines are the no-effect `null` and the `oracle` ceiling. "
-   "The learned-prop method is named **GCN** on the niche axis (Gaussian = the baseline prop). "
-   "Lower energy = closer to the observed perturbed cells; a box sitting **below `null`** beats "
-   "predicting 'no effect'. This is `plot_seed_prop(res)` — the per-dataset headline plot.")
-code("from spbench.plotting import plot_seed_prop, collect_seed_samples, collect_prop_samples\n"
+   "Mirrors the CONCERT-style figure but as **three boards**: **one box per method**, box = that "
+   "method's pooled **per-repeat matched-n energy distance** (`res[...]['e_samples']`), shown as "
+   "**log(E-distance), lower = better**.\n"
+   "- **seed** — all models together; dashed `null (floor)` = same-type control center. **No upper bound** "
+   "(GT seed = the observed center itself -> energy ~0, trivial).\n"
+   "- **niche . seed-only + Gaussian** — box = model seed propagated by the shared Gaussian baseline; "
+   "upper bound = **GT seed + Gaussian** (cell-1, the baseline-prop ceiling, isolates seed quality).\n"
+   "- **niche . end-to-end (GCN mock)** — box = the learned-prop niche; upper bound = **GT seed + GCN** "
+   "(cell-2). GCN stands in as a mock end-to-end model until a real one (CONCERT) is wired in.\n"
+   "Upper bounds are **per-prop** (each prop has its own GT-seed ceiling). This is `plot_seed_prop(res)`.")
+code("from spbench.plotting import plot_seed_prop, collect_seed_samples, collect_niche_tier\n"
      "fig = plot_seed_prop(res)\n"
      "fig.savefig('seed_prop_methods.png', dpi=130, bbox_inches='tight')\n"
-     "_sb, _ = collect_seed_samples(res); _pb, _ = collect_prop_samples(res)\n"
-     "print('seed axis methods :', list(_sb))\n"
-     "print('niche axis methods:', list(_pb), '(GCN = learned prop)')\n"
+     "_sb, _ = collect_seed_samples(res)\n"
+     "_b1, _d1 = collect_niche_tier(res, 'base'); _b2, _d2 = collect_niche_tier(res, 'learned')\n"
+     "print('seed board   :', list(_sb), '(floor only, no upper bound)')\n"
+     "print('niche tier-1 :', list(_b1), '| refs', list(_d1), '(Gaussian, upper = GT+Gaussian)')\n"
+     "print('niche tier-2 :', list(_b2), '| refs', list(_d2), '(GCN mock, upper = GT+GCN)')\n"
      "fig")
 
 # ----------------------------------------------------------------------------- 6. scGEN
