@@ -1,7 +1,8 @@
 from .base import DatasetAdapter
 from .saunders import SaundersAdapter
+from .dhainaut import DhainautAdapter
 
-_REGISTRY = {"saunders": SaundersAdapter}
+_REGISTRY = {"saunders": SaundersAdapter, "dhainaut": DhainautAdapter}
 
 def get_adapter(name: str):
     return _REGISTRY[name]
