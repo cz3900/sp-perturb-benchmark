@@ -102,3 +102,73 @@ def test_scgen_loader_caches_per_perturbation(tmp_path):
     a = model.predict_seed("G", np.zeros((1, 2)))
     b = model.predict_seed("G", np.zeros((1, 2)))
     assert a is b                                        # second call hits the cache (same object)
+
+
+# --- G6.3: eval_X as a precomputed matrix switches seed_obs/seed_ref to the log-norm space ---
+from spbench.harness import fill_2x2
+from spbench.compare import evaluate_seed
+from spbench.synthetic import make_synthetic
+from spbench.graph import build_knn_graph
+from spbench.reference import match_reference_centers
+
+
+class _ConstSeed:
+    name = "const_seed"
+    def __init__(self, val): self.val = val
+    def fit(self, train): return self
+    def predict_seed(self, perturbation, reference_cells):
+        return np.tile(self.val, (max(1, len(reference_cells)), 1)).astype(float)
+
+
+class _IdentityProp:
+    name = "id_prop"
+    def fit(self, train, edges): return self
+    def propagate(self, X_reference, edges, center, seed_state, neighbors):
+        return X_reference[neighbors]
+
+
+def test_fill_2x2_eval_X_switches_seed_obs_ref_space():
+    data = make_synthetic(0)
+    edges = build_knn_graph(data, k=8)
+    P = data.perturbations()[0]
+    eval_X = data.X + 100.0                                # a distinct "log-norm-like" space
+    seed = _ConstSeed(np.zeros(data.n_genes)); prop = _IdentityProp()
+    grid = fill_2x2(data, P, edges, seed, prop, prop, return_niches=True, eval_X=eval_X)
+    n = grid["_niches"]
+
+    centers = np.where(data.perturbation == P)[0]
+    refs = match_reference_centers(data, centers, k=5)     # k=5 == fill_2x2's default k_ref
+    seed_ref_idx = np.unique(np.concatenate(refs))
+    assert np.allclose(n["seed_obs"], eval_X[centers])     # observed centers in eval_X space
+    assert np.allclose(n["seed_ref"], eval_X[seed_ref_idx])
+    assert n["seed_pred"].shape == (len(centers), data.n_genes)
+
+
+def test_fill_2x2_default_keeps_data_X_space():
+    data = make_synthetic(0)
+    edges = build_knn_graph(data, k=8)
+    P = data.perturbations()[0]
+    seed = _ConstSeed(np.zeros(data.n_genes)); prop = _IdentityProp()
+    grid = fill_2x2(data, P, edges, seed, prop, prop, return_niches=True)   # no eval_X
+    centers = np.where(data.perturbation == P)[0]
+    assert np.allclose(grid["_niches"]["seed_obs"], data.X[centers])        # unchanged default
+
+
+def test_evaluate_seed_finite_under_eval_X():
+    data = make_synthetic(0)
+    edges = build_knn_graph(data, k=8)
+    P = data.perturbations()[0]
+    centers = np.where(data.perturbation == P)[0]
+    eval_X = np.abs(data.X) + 0.5                          # strictly positive, distinct space
+
+    # a seed that predicts a real (non-flat) shift so pcc_delta is well-defined, not NaN-flat
+    class _ShiftSeed:
+        name = "shift"
+        def fit(self, train): return self
+        def predict_seed(self, perturbation, reference_cells):
+            return eval_X[centers]                         # (n_centers, G); fill_2x2 .mean(0)s it
+    prop = _IdentityProp()
+    grid = fill_2x2(data, P, edges, _ShiftSeed(), prop, prop, return_niches=True, eval_X=eval_X)
+    res = evaluate_seed(grid["_niches"])
+    assert np.isfinite(res["mse"])
+    assert res["n"] == int(len(centers))

@@ -126,9 +126,25 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
                                for rc in refs]) if len(centers)
                      else np.zeros((0, data.n_genes)))
         seed_ref_idx = np.unique(np.concatenate(refs)) if len(refs) else np.array([], int)
+        # eval_X is dual-semantic (cross-task convention #1, pcc_delta is NOT space-robust):
+        #   - np.ndarray (G6 scGEN log-norm matrix): the model's seed_pred already lives in this
+        #     space, so slice seed_obs/seed_ref into it HERE (eval_X[centers] / eval_X[seed_ref_idx])
+        #     and carry eval_X=None downstream — the three are already co-spaced, no transform left.
+        #   - callable (G4, e.g. np.arcsinh) or None: keep seed_obs/seed_ref in data.X space and
+        #     stash the callable/None unchanged so evaluate_seed/compare_to_baseline apply it at
+        #     scoring time (the G4 path). The two branches MUST NOT collide.
+        if isinstance(eval_X, np.ndarray):
+            eval_space = np.asarray(eval_X, float)
+            seed_obs = eval_space[centers]
+            seed_ref = eval_space[seed_ref_idx]
+            carried_eval_X = None
+        else:
+            seed_obs = data.X[centers]
+            seed_ref = data.X[seed_ref_idx]
+            carried_eval_X = eval_X
         grid["_niches"] = {"observed": observed, "reference": gt["reference_niche"],
                            "1": cells["1"], "2": cells["2"], "3": cells["3"], "4": cells["4"],
-                           "seed_obs": data.X[centers], "seed_pred": seed_pred,
-                           "seed_ref": data.X[seed_ref_idx],
-                           "eval_X": eval_X}   # unified scoring-space transform, carried downstream
+                           "seed_obs": seed_obs, "seed_pred": seed_pred,
+                           "seed_ref": seed_ref,
+                           "eval_X": carried_eval_X}   # transform carried downstream (callable/None)
     return grid
