@@ -73,11 +73,25 @@ plain reconstruction. The runner then averages `pred` per cell type into the pro
 ## Two-step invocation (venv export → biolord env runner)
 
 ```bash
-# 1. (shared .venv) export the per-perturbation h5ad + centers npz
-python -c "from spbench.adapters.biolord_export import export_to_biolord_h5; \
-           from spbench.adapters.counts_export import build_counts_X; \
-           export_to_biolord_h5(data, 'P0', build_counts_X(data), 'dumps/biolord/P0.h5ad')"
-#    -> dumps/biolord/P0.h5ad  +  dumps/biolord/P0_centers.npz ('center_idx','cell_type')
+# 1. (shared .venv) export the per-perturbation h5ad, THEN write the centers npz.
+#    export_to_biolord_h5 writes ONLY {P}.h5ad; the {P}_centers.npz the runner's --centers
+#    needs is a SEPARATE np.savez (same derivation as scripts/scgen/export_dumps.py).
+python -c "
+import numpy as np
+from spbench.adapters.biolord_export import export_to_biolord_h5
+from spbench.adapters.counts_export import build_counts_X
+export_to_biolord_h5(data, 'P0', build_counts_X(data), 'dumps/biolord/P0.h5ad')
+centers = np.where(data.perturbation == 'P0')[0]               # StandardData indices of P0's perturbed cells
+np.savez('dumps/biolord/P0_centers.npz',
+         center_idx=centers.astype(np.int64),
+         cell_type=np.asarray([str(c) for c in data.cell_type[centers]]))
+"
+#    -> dumps/biolord/P0.h5ad        (from export_to_biolord_h5)
+#    -> dumps/biolord/P0_centers.npz ('center_idx','cell_type' in centers order; from the np.savez above)
+#
+#    scripts/scgen/export_dumps.py is the canonical centers-npz producer (same
+#    np.where(data.perturbation == P)[0] + data.cell_type[centers] derivation, looped over
+#    perturbations) — reuse it when exporting many perturbations at once.
 
 # 2. (biolord conda env) train + counterfactual override + dump the aligned seed
 $HOME/.conda/envs/biolord/bin/python scripts/biolord/run_biolord.py \
