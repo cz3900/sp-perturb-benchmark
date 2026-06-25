@@ -1,5 +1,6 @@
 import numpy as np
 from .base import DatasetAdapter
+from .cheng import _is_control_target
 from ..data import StandardData
 
 
@@ -19,7 +20,9 @@ def _assemble_binan(X, coords, gene_names, tumor_pert_by_full_idx,
     pert = np.array(["none"] * n, dtype=object)
     for f, g in tumor_pert_by_full_idx.items():
         if 1 <= int(f) <= n:
-            pert[int(f) - 1] = g
+            gv = str(g)
+            # one of the 36 guides is literally named "Control" (non-targeting) -> 'control'
+            pert[int(f) - 1] = "control" if _is_control_target(gv) else gv
     tumor = np.zeros(n, bool)
     for f in tumor_idx:
         if 1 <= int(f) <= n:

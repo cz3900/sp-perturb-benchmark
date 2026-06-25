@@ -6,8 +6,9 @@ def test_binan_assemble_named_guides():
     X = np.arange(6 * 3).reshape(6, 3).astype(float)
     coords = np.arange(12).reshape(6, 2).astype(float)
     genes = ["g0", "g1", "g2"]
-    # tumor cells at 1-based full index 2, 4, 5; named guides from the tumor perturbation table
-    tumor_pert = {2: "CD14", 4: "control", 5: "CHUK"}
+    # tumor cells at 1-based full index 2, 4, 5; named guides from the tumor perturbation table.
+    # the "Control" guide (non-targeting) must map to 'control', not be treated as a KO named Control.
+    tumor_pert = {2: "CD14", 4: "Control", 5: "CHUK"}
     data = _assemble_binan(X, coords, genes, tumor_pert,
                            tumor_idx={2, 4, 5}, immune_nb_idx={2}, without_nb_idx={4, 5})
     # full idx -> row (idx-1); tumor cells get their named guide / 'control'; everyone else 'none'
