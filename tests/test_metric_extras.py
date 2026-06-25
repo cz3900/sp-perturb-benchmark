@@ -9,7 +9,8 @@ def test_normalized_pcc_anchors_and_clip():
     assert abs(normalized_pcc(0.4, 0.0, 0.8) - 0.5) < 1e-9
     assert normalized_pcc(1.0, 0.0, 0.8) == 1.0          # above upper -> clipped to 1
     assert normalized_pcc(-0.3, 0.0, 0.8) == 0.0         # below null -> clipped to 0
-    assert np.isnan(normalized_pcc(0.4, 0.5, 0.5))       # degenerate null/upper gap -> nan
+    assert np.isnan(normalized_pcc(0.4, 0.5, 0.5))       # zero null/upper gap -> nan
+    assert np.isnan(normalized_pcc(-0.05, 0.0, -0.02))   # upper below null (no headroom) -> nan
 
 
 def test_mag_ratio():

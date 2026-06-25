@@ -31,9 +31,11 @@ def normalized_pcc(pcc, pcc_null, pcc_upper):
 
         norm = clip((pcc - pcc_null) / (pcc_upper - pcc_null), 0, 1)
 
-    Returns nan when the null/upper gap is degenerate (non-finite or ~0)."""
+    Returns nan when there is no positive headroom to normalize against — non-finite gap, or
+    pcc_upper <= pcc_null (the GT-seed upper is not above the null, so the normalization would be
+    meaningless / sign-flipped)."""
     gap = pcc_upper - pcc_null
-    if not np.isfinite(gap) or abs(gap) < 1e-12:
+    if not np.isfinite(gap) or gap < 1e-12:
         return float("nan")
     return float(np.clip((pcc - pcc_null) / gap, 0.0, 1.0))
 

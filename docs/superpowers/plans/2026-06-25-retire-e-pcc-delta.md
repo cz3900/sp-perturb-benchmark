@@ -60,4 +60,4 @@
   scGEN with dumps if available) → confirm scGEN now has a niche PCC + the normalized-gap table.
 
 ## Status
-- [x] A  - [x] B  - [ ] C  - [ ] D  - [ ] E
+- [x] A  - [x] B  - [x] C  - [x] D  - [ ] E
