@@ -48,10 +48,11 @@ def main():                                          # pragma: no cover (needs s
     if adata.obs["mouse_id"].astype(str).nunique() < 2:
         adata.obs["mouse_id"] = two_group_split(adata.n_obs)
         adata.write_h5ad(args.h5ad)                  # persist split for the API's file reads
+    ids = sorted(adata.obs["mouse_id"].astype(str).unique().tolist())   # disjoint id groups
     exp = f"sp_{args.pert}"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     _, gene_names, (_, _, trained_model_path) = train_perturbation_model(
-        file_path=args.h5ad, train_ids=["g0"], test_ids=["g1"], exp_name=exp,
+        file_path=args.h5ad, train_ids=ids[:-1], test_ids=ids[-1:], exp_name=exp,
         k_hop=2, augment_hop=2, center_celltypes="all", node_feature="expression",
         inject_feature="none", learning_rate=1e-4, loss="weightedl1", epochs=args.epochs,
         num_cells_per_ct_id=100, normalize_total=True, predict_celltype=False, pool="center",
@@ -60,7 +61,7 @@ def main():                                          # pragma: no cover (needs s
     create_perturbation_input_matrix(adata, pert, mask_key="perturbed_input",
                                      save_path=save_path, normalize_total=True)
     result = predict_perturbation_effects(adata_path=save_path, model_path=trained_model_path,
-                                          exp_name=exp, use_ids=None, whole_tissue=True)
+                                          exp_name=exp, use_ids=ids, whole_tissue=True)
     pred = np.asarray(result.layers["predicted_tempered"], float)
     # fill NaN (unpredicted) cells with the normalized input (no change)
     base = np.asarray(result.layers.get("predicted_unperturbed", result.X), float)
