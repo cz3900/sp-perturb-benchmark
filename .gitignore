@@ -8,6 +8,7 @@ methods_demo.png
 saunders_stats/
 .DS_Store
 .ipynb_checkpoints/
+.superpowers/
 
 # server-side reproduction working dir (data/outputs, not code)
 runs/
