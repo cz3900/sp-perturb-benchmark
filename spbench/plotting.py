@@ -138,3 +138,33 @@ def plot_delta(res, figsize=(11, 4.3)):
         ax.legend(fontsize=8, loc="best"); ax.tick_params(axis="x", rotation=30)
     fig.tight_layout()
     return fig
+
+
+# niche cell key -> column label for the PCC-delta summary (the locked scoring currency).
+_NICHE_COLS = {"model+base": "Gaussian", "model+learned": "GCN"}
+# pcc keys that are NOT deployable methods (2x2 oracle rows + baselines); everything else in a
+# guide's pcc dict is an external/end-to-end model (CONCERT, SpatialProp, ...).
+_NON_METHOD_PCC = {"GT+base", "GT+learned", "model+base", "model+learned", "null", "oracle"}
+
+
+def summary_table(res):
+    """Per-guide PCC-delta summary — the single locked scoring currency (Task 0).
+    One row per guide: seed PCC-delta + niche PCC-delta for the deployable cells
+    (Gaussian/GCN) and every external/end-to-end model. Returns list[dict].
+
+    External method names are derived from the `pcc` dict keys (not e_samples), so the table works
+    whether or not box-plot samples are present."""
+    seed = res.get("seed", {})
+    cmp = res.get("compare", {})
+    guides = sorted(set(seed) | set(cmp))
+    ext = sorted({k for c in cmp.values() for k in c.get("pcc", {})} - _NON_METHOD_PCC)
+    rows = []
+    for g in guides:
+        row = {"guide": g, "seed_pcc_delta": seed.get(g, {}).get("pcc_delta", float("nan"))}
+        pcc = cmp.get(g, {}).get("pcc", {})
+        for cell, label in _NICHE_COLS.items():
+            row[f"niche_{label}"] = pcc.get(cell, float("nan"))
+        for nm in ext:
+            row[f"niche_{nm}"] = pcc.get(nm, float("nan"))
+        rows.append(row)
+    return rows
