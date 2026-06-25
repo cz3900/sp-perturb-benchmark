@@ -23,6 +23,7 @@ class MoranI(Metric):
     pred/gt are (n_cells, n_genes); context must carry 'coords'. Lower = better."""
     name = "moran_gap"
     higher_is_better = False
+    status = "planned"
 
     def __init__(self, k: int = 6, max_genes: int = 50):
         self.k = k

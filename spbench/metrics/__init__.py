@@ -9,7 +9,8 @@ def register(metric: Metric):
 def get_metric(name: str) -> Metric:
     return _REGISTRY[name]
 
-def list_metrics() -> list:
-    return sorted(_REGISTRY)
+def list_metrics(active_only: bool = False) -> list:
+    return sorted(n for n, m in _REGISTRY.items()
+                  if not active_only or getattr(m, "status", "active") == "active")
 
 from . import energy, rho_niche, moran, pcc_delta, mse, comp_l1  # noqa: E402  (self-register)

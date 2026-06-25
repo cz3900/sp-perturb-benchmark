@@ -4,6 +4,7 @@ import numpy as np
 class Metric(ABC):
     name: str = "metric"
     higher_is_better: bool = False
+    status: str = "active"          # "active" = scored; "planned" = kept but not a scoring currency
 
     @abstractmethod
     def compute(self, pred: np.ndarray, gt: np.ndarray, context: dict | None = None) -> float:

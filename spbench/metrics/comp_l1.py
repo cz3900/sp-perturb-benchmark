@@ -14,6 +14,7 @@ class CompL1(Metric):
     JS / cross-entropy / Aitchison once the observed-composition line is in place."""
     name = "comp_l1"
     higher_is_better = False
+    status = "planned"
 
     def compute(self, pred, gt, context=None) -> float:
         pred = np.asarray(pred, float); gt = np.asarray(gt, float)
