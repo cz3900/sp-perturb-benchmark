@@ -1,6 +1,6 @@
 import numpy as np
 from spbench.config import run_benchmark
-from spbench.plotting import collect_prop_samples, collect_seed_samples, collect_niche_tier
+from spbench.plotting import collect_seed_samples, collect_niche_tier
 
 GCN_KW = {"hidden": 16, "epochs": 5}
 

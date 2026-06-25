@@ -19,12 +19,3 @@ def leakage_pass(grid: dict, floor: float = 1e-3) -> bool:
     e1 = grid.get("1", {}).get("energy_prop", float("inf"))
     e2 = grid.get("2", {}).get("energy_prop", float("inf"))
     return e1 >= floor and e2 >= floor
-
-
-def rho_niche_gate(rho_with: float, rho_without: float, margin: float = 0.10) -> bool:
-    return (rho_with - rho_without) >= margin
-
-
-def rank_models(end_to_end_scores: dict) -> list:
-    """end_to_end_scores: {model_name: mean E-distance}. Lower is better."""
-    return sorted(end_to_end_scores, key=lambda m: end_to_end_scores[m])

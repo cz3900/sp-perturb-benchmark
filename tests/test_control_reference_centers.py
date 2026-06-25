@@ -8,8 +8,18 @@ function itself (tautological — it would pass even if the leaky matcher were s
 these tests pin the actual properties independently.
 """
 import numpy as np
-from spbench.reference import match_reference_centers
 from spbench.reference_aggregate import control_reference_centers
+
+
+def _knn_same_type_controls(data, c, k=5):
+    """The retired match_reference_centers behaviour, inlined: the k expression-nearest CONTROL
+    cells of the same cell type as center c. Used only to prove the aggregate pool is a strict
+    SUPERSET of any such k-NN subset (i.e. NOT the leaky feature-NN matcher)."""
+    ctrl = np.where(data.is_control & (data.cell_type == data.cell_type[c]))[0]
+    if len(ctrl) <= k:
+        return ctrl
+    d = np.linalg.norm(data.X[ctrl] - data.X[c], axis=1)
+    return ctrl[np.argsort(d)[:k]]
 
 
 def test_returns_same_type_controls_only(synth):
@@ -40,9 +50,9 @@ def test_not_expression_nearest_neighbour(synth):
     controls. Swapping the leaky expression-NN matcher back in would shrink the set and fail here."""
     centers = np.where(synth.perturbation == "P0")[0]
     agg = control_reference_centers(synth, centers)
-    matched = match_reference_centers(synth, centers, k=5)
     saw_superset = False
-    for c, a, m in zip(centers, agg, matched):
+    for c, a in zip(centers, agg):
+        m = _knn_same_type_controls(synth, c, k=5)
         n_type_ctrl = int((synth.is_control & (synth.cell_type == synth.cell_type[c])).sum())
         if n_type_ctrl > 5:
             assert len(a) == n_type_ctrl and len(a) > len(m)

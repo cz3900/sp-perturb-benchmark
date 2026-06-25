@@ -5,9 +5,6 @@ GCN is the learned-prop method (`model+learned`); shown named "GCN" in the niche
 Dashed lines = no-effect null floor (gray) and the per-prop GT-seed upper bound (teal)."""
 import numpy as np
 
-# 2x2 method key -> niche-plot label. GCN = learned prop (model seed + GCN); Gaussian = baseline prop.
-PROP_LABELS = {"model+base": "Gaussian", "model+learned": "GCN",
-               "GT+base": "Gaussian (GT seed)", "GT+learned": "GCN (GT seed)"}
 # dashed reference lines: no-effect null floor (gray) and GT-seed upper bound (teal)
 _DASH_COLORS = {"null (floor)": "#888888", "GT-seed (upper)": "#1d9e75"}
 
@@ -52,25 +49,6 @@ def collect_niche_tier(res, tier):
         dashed["null (floor)"] = float(np.nanmean(nulls))
     if uppers:
         dashed["GT-seed (upper)"] = float(np.nanmean(uppers))
-    return boxes, dashed
-
-
-def collect_prop_samples(res, box_methods=("model+base", "model+learned"),
-                         dashed_methods=("null", "oracle")):
-    """{label: pooled per-repeat energy array} for the box methods, plus {name: mean energy}
-    for the dashed baselines. Pools across all perturbations in res['compare']."""
-    boxes, dashed = {}, {}
-    cmp = res.get("compare", {})
-    for m in box_methods:
-        pooled = []
-        for c in cmp.values():
-            pooled += list(c.get("e_samples", {}).get(m, []))
-        if pooled:
-            boxes[PROP_LABELS.get(m, m)] = np.asarray(pooled, float)
-    for m in dashed_methods:
-        vals = [c["e"][m] for c in cmp.values() if m in c.get("e", {})]
-        if vals:
-            dashed[m] = float(np.nanmean(vals))
     return boxes, dashed
 
 

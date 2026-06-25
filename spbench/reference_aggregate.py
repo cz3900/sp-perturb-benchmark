@@ -1,8 +1,8 @@
 # /Users/cz/Documents/ZengLab/model/sp-perturb-benchmark/spbench/reference_aggregate.py
 """Sample-level aggregate control reference (G1).
 
-Replaces the nearest-neighbour matched-control logic in `reference.match_reference_centers`
-with a per-cell-type aggregate computed from CONTROL cells only:
+A per-cell-type aggregate computed from CONTROL cells only (this replaced an earlier feature-space
+nearest-neighbour matched-control approach, retired to remove its leakage):
 
   - expr        : mean expression of control cells of that cell type (global control mean fallback)
   - niche_comp  : mean bystander-neighbour cell-type composition (a simplex over `cell_types`)
@@ -76,15 +76,15 @@ def aggregate_control(data, edges, min_control: int = 1) -> AggregateControl:
 
 
 def control_reference_centers(data, centers):
-    """Aggregate-control replacement for `reference.match_reference_centers`.
+    """Aggregate-control reference centers (sample-level, no feature-space matching).
 
     For each perturbed center, return ALL control cells of the SAME cell type (sample-level), with
     NO expression nearest-neighbour matching — so there is no matched-control feature-space leakage
     (the whole point of the aggregate-control reference: the control is the sample's average
     unperturbed cell of that type, not the control cell that happens to look most like the
     perturbed one). Falls back to all control cells when a cell type has no controls. Returns a
-    list aligned to `centers`, matching the `match_reference_centers` interface so harness /
-    propagation_gt swap it in directly (same-type centers share one array — cheap, read-only).
+    list aligned to `centers`, consumed by harness / propagation_gt directly (same-type centers
+    share one array — cheap, read-only).
     """
     ctrl_idx = np.where(data.control_pool)[0]
     by_type, out = {}, []
