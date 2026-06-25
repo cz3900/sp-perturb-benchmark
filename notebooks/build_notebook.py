@@ -245,6 +245,23 @@ code("from spbench.plotting import plot_seed_prop, collect_seed_samples, collect
      "print('niche tier-2 :', list(_b2), '| refs', list(_d2), '(GCN mock, upper = GT+GCN)')\n"
      "fig")
 
+# ----------------------------------------------------------------------------- 5c. PCC-delta (primary)
+md("## 5c. PCC-delta — the unified primary metric (seed | niche)\n"
+   "Seed and niche on ONE logic: **PCC-delta of the perturbation shift** (predicted Delta vs observed "
+   "Delta, baseline = matched control), **higher = better, bounded**. This is mean-shift accuracy — "
+   "the quantity that is actually comparable for models predicting a conditional mean. The E-distance "
+   "box in 5b is the variance-aligned **secondary** view: seed now gets the same control-residual "
+   "restoration as niche, so a collapsed mean-field seed is no longer structurally penalised by the "
+   "energy distance (that was a metric artefact, not a model failure). Dashed: perfect=1, no-corr=0. "
+   "This is `plot_delta(res)`.")
+code("from spbench.plotting import plot_delta, collect_delta\n"
+     "figd = plot_delta(res)\n"
+     "figd.savefig('delta_methods.png', dpi=130, bbox_inches='tight')\n"
+     "_ds, _ = collect_delta(res, 'seed'); _dn, _ = collect_delta(res, 'niche')\n"
+     "print('seed  PCC-delta methods:', list(_ds))\n"
+     "print('niche PCC-delta methods:', list(_dn))\n"
+     "figd")
+
 # ----------------------------------------------------------------------------- 6. scGEN
 md("## 6. scGEN — a seed-only conditional model (optional)\n"
    "scGEN is run OFFLINE in its own env; per perturbation it dumps `{P}_seed.h5ad` (a "
