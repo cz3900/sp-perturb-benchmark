@@ -2,17 +2,20 @@ import numpy as np
 from spbench.adapters.binan import _assemble_binan
 
 
-def test_binan_assemble():
-    X = np.arange(5 * 3).reshape(5, 3).astype(float)
-    coords = np.arange(10).reshape(5, 2).astype(float)
-    # one-hot guide table: control, guide_0, guide_1, multiplet(2 guides), control
-    onehot = np.array([[0, 0], [1, 0], [0, 1], [1, 1], [0, 0]])
-    data = _assemble_binan(X, coords, onehot, ["g0", "g1", "g2"], tumor_full_idx_1based=[2, 3])
-    # sum 0 -> control, sum 1 -> guide_<argmax>, sum>=2 -> none
-    assert list(data.perturbation) == ["control", "guide_0", "guide_1", "none", "control"]
-    # cell_type: 1-based full index 2,3 -> tumor, else other
-    assert list(data.cell_type) == ["other", "tumor", "tumor", "other", "other"]
-    assert data.has_ntc is True
-    assert set(data.perturbations()) == {"guide_0", "guide_1"}
-    assert data.X.shape == (5, 3) and list(data.gene_names) == ["g0", "g1", "g2"]
-    assert data.coords.shape == (5, 2)
+def test_binan_assemble_named_guides():
+    X = np.arange(6 * 3).reshape(6, 3).astype(float)
+    coords = np.arange(12).reshape(6, 2).astype(float)
+    genes = ["g0", "g1", "g2"]
+    # tumor cells at 1-based full index 2, 4, 5; named guides from the tumor perturbation table
+    tumor_pert = {2: "CD14", 4: "control", 5: "CHUK"}
+    data = _assemble_binan(X, coords, genes, tumor_pert,
+                           tumor_idx={2, 4, 5}, immune_nb_idx={2}, without_nb_idx={4, 5})
+    # full idx -> row (idx-1); tumor cells get their named guide / 'control'; everyone else 'none'
+    assert list(data.perturbation) == ["none", "CD14", "none", "control", "CHUK", "none"]
+    # cell_type: tumor for the tumor full-idx set, else 'other'
+    assert list(data.cell_type) == ["other", "tumor", "other", "tumor", "tumor", "other"]
+    assert set(data.perturbations()) == {"CD14", "CHUK"} and data.has_ntc is True
+    assert data.X.shape == (6, 3) and list(data.gene_names) == genes
+    # immune-neighbour annotation carried in meta (a tumor-cell sub-annotation, not a cell type)
+    assert data.meta["immune_neighbor_idx"] == [2]
+    assert data.meta["immune_distal_idx"] == [4, 5]
