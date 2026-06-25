@@ -17,7 +17,7 @@ def _niches():
 
 def test_compare_default_unchanged():
     out = compare_to_baseline(_niches(), repeats=3, seed=0)
-    assert set(out) == {"e", "gain", "pcc", "n", "has_effect", "e_samples"}
+    assert set(out) == {"e", "gain", "pcc", "mag", "n", "has_effect", "e_samples"}
     assert "null" in out["e"] and out["gain"]["null"] == pytest.approx(0.0, abs=1e-9)
     for k in ["GT+base", "GT+learned", "model+base", "model+learned"]:
         assert np.isfinite(out["pcc"][k])
