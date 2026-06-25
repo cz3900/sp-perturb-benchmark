@@ -51,3 +51,27 @@ chex 0.1.86, `export LD_LIBRARY_PATH=$CONDA_PREFIX/lib`, `-w node03` no `--gres`
    ```
    → CONCERT lands on the same gain / PCC-delta leaderboard as TrivialSeed/Gaussian/GCN + e_null/oracle.
    Headline question: **does CONCERT beat the no-effect baseline and our GCN on our data?**
+
+   Preferred wiring (whole benchmark in one call, niche second board): pass CONCERT as an
+   external/end-to-end model to `run_benchmark` and read the single PCC-delta currency off
+   `summary_table` (the `niche_CONCERT` column):
+   ```python
+   from spbench.config import run_benchmark
+   from spbench.plotting import summary_table
+   cms = {P: ConcertModel({P: f"out/..._{P}_perturbed_counts.h5ad"}) for P in perts}
+   # one ConcertModel per P, or a single model whose dict holds every P:
+   res = run_benchmark(data, perturbations=perts,
+                       external_models={"CONCERT": ConcertModel(all_paths)}, progress=False)
+   for row in summary_table(res):
+       print(row["guide"], row.get("niche_CONCERT"))   # PCC-delta, higher = better
+   ```
+   This is the same path the regression test `tests/test_concert_in_run_benchmark.py` exercises
+   (CONCERT → `res["compare"][P]["pcc"]["CONCERT"]` → `niche_CONCERT`). The `--stage eval`
+   counterfactual `.h5ad` layout (`/X` dense or CSR) is what `ConcertModel.read_h5ad_X` reads.
+
+## Load-bearing pre-flight (confirm before any train run)
+
+`h5ls -r <saunders>.h5mu | grep -iE "layers|/X"` to locate the **raw integer counts** layer
+(`mod/rna/X` → `counts_layer="X"`, or `mod/rna/layers/<name>`). `data.X` is `layers/raw_scaled`
+(z-scored) and is NOT counts — exporting it silently trains CONCERT on the wrong space. This is the
+one step that, if skipped, invalidates the whole run.
