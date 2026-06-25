@@ -69,6 +69,33 @@ def _draw_residuals(pools, cell_types, rng):
         out[i] = R[rng.integers(len(R))] if len(R) else 0.0
     return out
 
+def _xref_from(Xexpr, data):
+    """Per-cell control-reference matrix in the space of `Xexpr`: each cell -> mean of Xexpr over
+    control-pool cells of its cell type (global control mean fallback). Mirrors
+    _control_reference_aggregate but in an explicit space (e.g. eval_X / scGEN log-norm)."""
+    pool = data.control_pool
+    gmean = Xexpr[pool].mean(0) if pool.any() else Xexpr.mean(0)
+    Xr = np.tile(gmean, (Xexpr.shape[0], 1)).astype(float)
+    for ct in np.unique(data.cell_type):
+        m = pool & (data.cell_type == ct)
+        if m.any():
+            Xr[data.cell_type == ct] = Xexpr[m].mean(0)
+    return Xr
+
+
+def _residuals_from(Xexpr, data):
+    """Per-cell-type control residual pools in the space of `Xexpr` (+ global pool under None).
+    Mirrors _control_residuals but in an explicit space (e.g. eval_X / scGEN log-norm)."""
+    pool = data.control_pool
+    pools = {None: (Xexpr[pool] - (Xexpr[pool].mean(0) if pool.any() else Xexpr.mean(0)))
+             if pool.any() else (Xexpr - Xexpr.mean(0))}
+    for ct in np.unique(data.cell_type):
+        m = pool & (data.cell_type == ct)
+        if m.any():
+            pools[ct] = Xexpr[m] - Xexpr[m].mean(0)
+    return pools
+
+
 def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop, k_ref=5,
              X_ref=None, return_niches=False, residuals=None, noise_seed=0, eval_X=None):
     """Fill the seed×propagation 2×2 for one perturbation.
@@ -87,11 +114,25 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
     energy = get_metric("energy")
     centers = np.where(data.perturbation == perturbation)[0]
     gt = propagation_gt(data, perturbation, edges, k_ref=k_ref)
-    observed = gt["perturbed_niche"]
+
+    # niche scoring space: when eval_X is the (n_cells, G) co-scoring matrix (e.g. scGEN's log-norm
+    # space) build the WHOLE niche path in it, so a model whose seed lives there (scGEN) is scored
+    # consistently — observed/reference niche, the control X_ref, and the residual pools all come
+    # from eval_X. Otherwise everything stays in data.X (the default baseline path, unchanged).
+    cospace = isinstance(eval_X, np.ndarray)
+    Xn = np.asarray(eval_X, float) if cospace else data.X
+    observed = Xn[gt["pert_nb"]]
 
     refs = control_reference_centers(data, centers)   # aggregate control: same-cell-type control cells, no feature match
-    if X_ref is None:
-        X_ref = _control_reference(data)   # propagation starts from the control niche, NOT the observed one
+    if cospace:
+        X_ref = _xref_from(Xn, data)
+        # recompute the residual pool in Xn space (the passed-in one is data.X space), but only when
+        # the caller actually wants a distributional readout (residuals is not None).
+        res_pool = _residuals_from(Xn, data) if residuals is not None else None
+    else:
+        if X_ref is None:
+            X_ref = _control_reference(data)   # propagation starts from the control niche, NOT the observed one
+        res_pool = residuals
 
     # ScgenSeedModel (and any loader exposing `.centers()`) caches a per-center-ALIGNED
     # (n_centers, G) seed array; predict_seed IGNORES reference_cells and returns the WHOLE array,
@@ -115,18 +156,18 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
             if len(nb) == 0:
                 continue
             if use_gt_seed:
-                seed_state = data.X[c]                                     # oracle: true perturbed center
+                seed_state = Xn[c]                                         # oracle: true perturbed center (in scoring space)
             elif per_center_seed is not None:
-                seed_state = per_center_seed[int(c)]                       # this center's OWN cached row
+                seed_state = per_center_seed[int(c)]                       # this center's OWN cached row (already in eval_X space)
             else:
                 # model seed predicts from the ALL same-cell-type CONTROL cells (aggregate control,
                 # no feature matching), never the center's own value -> one seed per cell type
                 seed_state = seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
             pred = prop_model.propagate(X_ref, edges, c, seed_state, nb)
-            if residuals is not None:                                      # distributional readout
-                pred = pred + _draw_residuals(residuals, data.cell_type[nb], rng)
+            if res_pool is not None:                                       # distributional readout
+                pred = pred + _draw_residuals(res_pool, data.cell_type[nb], rng)
             preds.append(pred)
-        return np.vstack(preds) if preds else np.zeros((0, data.n_genes))
+        return np.vstack(preds) if preds else np.zeros((0, Xn.shape[1]))
 
     cells = {
         "1": collect(True, baseline_prop),
@@ -174,7 +215,7 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
             seed_obs = data.X[centers]
             seed_ref = data.X[seed_ref_idx]
             carried_eval_X = eval_X
-        grid["_niches"] = {"observed": observed, "reference": gt["reference_niche"],
+        grid["_niches"] = {"observed": observed, "reference": Xn[gt["ref_nb"]],   # reference co-spaced with observed
                            "1": cells["1"], "2": cells["2"], "3": cells["3"], "4": cells["4"],
                            "seed_obs": seed_obs, "seed_pred": seed_pred,
                            "seed_pred_resid": seed_pred_resid,

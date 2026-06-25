@@ -24,4 +24,5 @@ def propagation_gt(data, perturbation: str, edges: np.ndarray, k_ref: int = 5) -
         "perturbed_niche": data.X[pert_nb],
         "reference_niche": data.X[ref_nb],
         "centers": centers, "ref_centers": ref_centers,
+        "pert_nb": pert_nb, "ref_nb": ref_nb,   # bystander indices (so a caller can re-index into another space)
     }
