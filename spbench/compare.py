@@ -41,6 +41,20 @@ def _apply_eval_X(A, eval_X):
     return A if eval_X is None else np.asarray(eval_X(A), float)
 
 
+def _mag(pred_x, obs_x, ref_x):
+    """Relative magnitude of the predicted mean-shift vs the true mean-shift, in the scoring space:
+    ||mean(pred)-mean(ref)|| / ||mean(obs)-mean(ref)||. 1 = right size, <1 under-, >1 over-shoot.
+    nan when the true shift is ~0 (nothing to scale against) or an input is empty."""
+    pred_x = np.asarray(pred_x, float); obs_x = np.asarray(obs_x, float); ref_x = np.asarray(ref_x, float)
+    if len(pred_x) == 0 or len(obs_x) == 0 or len(ref_x) == 0:
+        return float("nan")
+    rm = ref_x.mean(0)
+    dt = float(np.linalg.norm(obs_x.mean(0) - rm))
+    if not np.isfinite(dt) or dt < 1e-12:
+        return float("nan")
+    return float(np.linalg.norm(pred_x.mean(0) - rm) / dt)
+
+
 def evaluate_seed(niches, eval_X=None, repeats=20, seed=0, max_n=300):
     """Direct seed score: MODEL seed vs observed perturbed cells. Returns PCC-delta (direction,
     baseline=matched control), MSE (magnitude), AND `e_samples` = per-repeat matched-n energy
@@ -55,8 +69,8 @@ def evaluate_seed(niches, eval_X=None, repeats=20, seed=0, max_n=300):
     pred_e = _apply_eval_X(niches.get("seed_pred_resid", niches.get("seed_pred", np.zeros((0, 0)))), eval_X)
     ref = _apply_eval_X(niches.get("seed_ref", np.zeros((0, 0))), eval_X)
     if len(obs) == 0 or len(pred) == 0 or len(ref) == 0:
-        return {"pcc_delta": float("nan"), "mse": float("nan"), "n": int(len(obs)),
-                "e_samples": {}}
+        return {"pcc_delta": float("nan"), "mse": float("nan"), "mag": float("nan"),
+                "n": int(len(obs)), "e_samples": {}}
     clouds = {"model": pred_e, "null": ref}
     n = max(2, min(len(obs), len(pred), len(ref), max_n))
     rng = np.random.default_rng(seed + 1)
@@ -66,7 +80,8 @@ def evaluate_seed(niches, eval_X=None, repeats=20, seed=0, max_n=300):
         for k, c in clouds.items():
             samp[k].append(energy_distance(_sub(c, n, rng), O))
     return {"pcc_delta": get_metric("pcc_delta").compute(pred, obs, {"reference": ref}),
-            "mse": get_metric("mse").compute(pred, obs), "n": int(len(obs)),
+            "mse": get_metric("mse").compute(pred, obs), "mag": _mag(pred, obs, ref),
+            "n": int(len(obs)),
             "e_samples": {k: list(v) for k, v in samp.items()}}
 
 
@@ -115,10 +130,13 @@ def compare_to_baseline(niches, residuals=None, repeats=20, seed=0, max_n=300, e
     pccm = get_metric("pcc_delta")
     obs_x = _apply_eval_X(obs, eval_X)
     ref_x = _apply_eval_X(ref, eval_X)
-    pcc = {k: pccm.compute(_apply_eval_X(c, eval_X), obs_x, {"reference": ref_x})
-           for k, c in clouds.items()}
+    pcc, mag = {}, {}
+    for k, c in clouds.items():
+        cx = _apply_eval_X(c, eval_X)
+        pcc[k] = pccm.compute(cx, obs_x, {"reference": ref_x})
+        mag[k] = _mag(cx, obs_x, ref_x)
     # 'real effect' = the no-effect baseline is itself clearly far from observed (vs the oracle floor)
     floor = e.get("oracle", 0.0)
     has_effect = bool(null > 2 * floor) if "oracle" in e else bool(null > 0)
-    return {"e": e, "gain": gain, "pcc": pcc, "n": n, "has_effect": has_effect,
+    return {"e": e, "gain": gain, "pcc": pcc, "mag": mag, "n": n, "has_effect": has_effect,
             "e_samples": {k: list(v) for k, v in acc.items()}}

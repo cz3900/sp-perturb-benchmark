@@ -23,6 +23,21 @@ def normalized_score(e, e_null, e_oracle):
     return float(np.clip((e_null - e) / gap, 0.0, 1.0))
 
 
+def normalized_pcc(pcc, pcc_null, pcc_upper):
+    """Map a method's PCC-delta to [0,1] within one dataset/space: 0 = the null level (no-effect,
+    PCC-delta ~ 0), 1 = the GT-seed upper bound. This makes PCC comparable across models scored in
+    DIFFERENT spaces — each is normalized against its OWN same-space null and upper, so the space's
+    gene-weighting cancels.
+
+        norm = clip((pcc - pcc_null) / (pcc_upper - pcc_null), 0, 1)
+
+    Returns nan when the null/upper gap is degenerate (non-finite or ~0)."""
+    gap = pcc_upper - pcc_null
+    if not np.isfinite(gap) or abs(gap) < 1e-12:
+        return float("nan")
+    return float(np.clip((pcc - pcc_null) / gap, 0.0, 1.0))
+
+
 def cross_dataset_rank(per_dataset):
     """Rank methods within each dataset and aggregate across datasets.
 
