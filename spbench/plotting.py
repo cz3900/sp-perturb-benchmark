@@ -142,9 +142,6 @@ def plot_delta(res, figsize=(11, 4.3)):
 
 # niche cell key -> column label for the PCC-delta summary (the locked scoring currency).
 _NICHE_COLS = {"model+base": "Gaussian", "model+learned": "GCN"}
-# pcc keys that are NOT deployable methods (2x2 oracle rows + baselines); everything else in a
-# guide's pcc dict is an external/end-to-end model (CONCERT, SpatialProp, ...).
-_NON_METHOD_PCC = {"GT+base", "GT+learned", "model+base", "model+learned", "null", "oracle"}
 
 
 def summary_table(res):
@@ -157,7 +154,7 @@ def summary_table(res):
     seed = res.get("seed", {})
     cmp = res.get("compare", {})
     guides = sorted(set(seed) | set(cmp))
-    ext = sorted({k for c in cmp.values() for k in c.get("pcc", {})} - _NON_METHOD_PCC)
+    ext = sorted({k for c in cmp.values() for k in c.get("pcc", {})} - _STD_METHODS)
     rows = []
     for g in guides:
         row = {"guide": g, "seed_pcc_delta": seed.get(g, {}).get("pcc_delta", float("nan"))}

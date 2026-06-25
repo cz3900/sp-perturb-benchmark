@@ -60,4 +60,28 @@
   scGEN with dumps if available) → confirm scGEN now has a niche PCC + the normalized-gap table.
 
 ## Status
-- [x] A  - [x] B  - [x] C  - [x] D  - [ ] E
+- [x] A  - [x] B  - [x] C  - [x] D  - [x] E
+
+## Part E results (Saunders Batch_10_Slice_0, 14 EVAL guides, server `~/sp-perturb-benchmark-edist`)
+scGEN dumps generated (14/14 `{P}_seed.h5ad`, scgen env) + notebook re-run (nbconvert, exit 0).
+**Every seed model now has BOTH a seed and a niche PCC-delta** — capability matrix:
+
+| model | seed_pcc | niche_pcc | seed_norm | niche_norm |
+|---|---|---|---|---|
+| TrivialSeed | 0.275 | −0.065 | 0.285 | 0.998 |
+| scGEN | 0.379 | −0.107 | 0.379 | 1.000 |
+
+- ✅ Core deliverable met: `scgen_niche_pcc` exists (per-guide + mean), computed in scGEN's log-norm
+  space via the Part-B co-spacing; cross-space normalized gap computed.
+- ✅ Sanity: scGEN seed > TrivialSeed seed (0.379 vs 0.275; scGEN higher on 8/14 guides) — a
+  conditional model beats the cell-type-mean seed.
+- ⚠️ **Finding (not a bug): niche prediction is weak on this slice** — niche_pcc ~ 0/slightly
+  negative for BOTH models, i.e. the Gaussian-propagated niche shift does not correlate with the
+  observed bystander shift. The GT-seed niche upper (`GT+base`) is itself ~0, so `niche_norm` is
+  NaN for most guides (my no-headroom guard) and the ~1.0 mean is built from only 2–3 finite values
+  → **do not read niche_norm ~1.0 as "niche solved"**. The honest read is raw niche_pcc < 0.
+- Artifacts on server: `~/sp-perturb-benchmark-edist/notebooks/run_benchmark.executed.ipynb`,
+  `run_benchmark_results.png`, `delta_methods.png`; dumps `~/scgen_dumps_edist/Saunders_b10/`.
+- ⚠️ Slice gotcha: notebook default `SLICE_DIR`=dir + `MAX_FILES=1` loads the ALPHABETICALLY-FIRST
+  slice (`Batch_0_Slice_0`, sparse: 55 controls), NOT the `Batch_10_Slice_0` the EVAL list assumes.
+  Part E pinned it via a single-file symlink dir (`~/saunders_b10_slice`). Documented in the notebook.
