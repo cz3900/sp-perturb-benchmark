@@ -17,19 +17,32 @@ def is_perturbable(target, perturbable):
 
 def main():                                          # pragma: no cover (needs spacetravlr env + GPU)
     ap = argparse.ArgumentParser()
-    ap.add_argument("--h5ad", required=True)         # from export_to_spacetravlr_h5
+    ap.add_argument("--h5ad", required=True)         # from export_to_spacetravlr_h5 (custom h5 layout)
     ap.add_argument("--pert", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--epochs", type=int, default=150)
     args = ap.parse_args()
     import h5py                                       # lazy
-    import scanpy as sc
+    import anndata as ad
+    import pandas as pd
     from SpaceTravLR.spaceship import SpaceShip
     from spbench.dump_align import align_prediction_to_panel
 
-    adata = sc.read_h5ad(args.h5ad)
-    species = adata.uns.get("species", "mouse") if hasattr(adata, "uns") else "mouse"
-    panel = list(adata.var["gene_names"].astype(str))
+    # The adapter writes a CUSTOM HDF5 layout (not a valid .h5ad), so read it with raw h5py and build
+    # the AnnData in memory — mirrors how the loader reads dumps. Species comes from f.attrs.
+    with h5py.File(args.h5ad, "r") as f:
+        X = np.asarray(f["X"], float)
+        cell_type = np.array(f["obs"]["cell_type"]).astype(str)
+        batch = np.array(f["obs"]["batch"]).astype(str)
+        spatial = np.asarray(f["obsm"]["spatial"], float)
+        panel = [g.decode() if isinstance(g, bytes) else str(g)
+                 for g in np.array(f["var"]["gene_names"])]
+        species = str(f.attrs["species"]) if "species" in f.attrs else "mouse"
+    adata = ad.AnnData(X=X,
+                       obs=pd.DataFrame({"cell_type": cell_type, "batch": batch}),
+                       var=pd.DataFrame({"gene_names": panel}, index=panel))
+    adata.obsm["spatial"] = spatial
+
     ship = SpaceShip(name="bench").setup_(adata, run_commot=True)          # GRN + L-R preprocessing
     perturbable = set(SpaceShip.load_base_GRN(species).iloc[:, 0].astype(str))
     if not is_perturbable(args.pert, perturbable):
@@ -38,8 +51,7 @@ def main():                                          # pragma: no cover (needs s
     ship.setup_perturbations(adata)
     pred = np.asarray(ship.perturb(target=args.pert, gene_expr=0, propagation=4), float)
     pred_genes = list(ship.factory.genes) if hasattr(ship, "factory") else panel
-    fallback = np.asarray(adata.X, float)
-    aligned = align_prediction_to_panel(pred, pred_genes, panel, fallback)
+    aligned = align_prediction_to_panel(pred, pred_genes, panel, X)
     with h5py.File(args.out, "w") as f:
         f.create_dataset("X", data=np.zeros_like(aligned))
         f.create_group("layers").create_dataset("predicted_perturbed", data=aligned)
