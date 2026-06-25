@@ -96,3 +96,45 @@ def plot_seed_prop(res, figsize=(15, 4.3)):
     _draw_boxes(ax2, b2, d2, "E-distance", "niche · end-to-end (GCN mock)")
     fig.tight_layout()
     return fig
+
+
+def collect_delta(res, kind):
+    """PCC-delta per method for one task. kind='seed' -> res['seed'][p]['pcc_delta'] (box 'seed
+    model'); kind='niche' -> res['compare'][p]['pcc'][method] for the deployable cells + externals.
+    Returns ({label: [pcc per guide]}, {'perfect':1.0,'no-corr':0.0})."""
+    boxes = {}
+    if kind == "seed":
+        vals = [s["pcc_delta"] for s in res.get("seed", {}).values()
+                if np.isfinite(s.get("pcc_delta", np.nan))]
+        if vals:
+            boxes["seed model"] = vals
+    else:
+        cmp = res.get("compare", {})
+        for m, label in (("model+base", "Gaussian"), ("model+learned", "GCN")):
+            vals = [c["pcc"][m] for c in cmp.values() if np.isfinite(c.get("pcc", {}).get(m, np.nan))]
+            if vals:
+                boxes[label] = vals
+        for nm in external_methods(res):
+            vals = [c["pcc"][nm] for c in cmp.values() if np.isfinite(c.get("pcc", {}).get(nm, np.nan))]
+            if vals:
+                boxes[nm] = vals
+    return boxes, {"perfect": 1.0, "no-corr": 0.0}
+
+
+def plot_delta(res, figsize=(11, 4.3)):
+    """Primary view: PCC-delta (mean-shift direction; higher=better, bounded). seed | niche, same
+    axes. Dashed: perfect=1, no-corr=0."""
+    import matplotlib.pyplot as plt
+    sb, _ = collect_delta(res, "seed")
+    nb, _ = collect_delta(res, "niche")
+    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=figsize, sharey=True)
+    for ax, boxes, title in ((ax0, sb, "seed — PCC-delta"), (ax1, nb, "niche — PCC-delta")):
+        labels = list(boxes)
+        if labels:
+            ax.boxplot([np.asarray(boxes[l], float) for l in labels], tick_labels=labels, showfliers=False)
+        ax.axhline(1.0, ls="--", lw=1.2, color="#1d9e75", label="perfect")
+        ax.axhline(0.0, ls="--", lw=1.2, color="#888888", label="no-corr")
+        ax.set_ylabel("PCC-delta (higher = better)"); ax.set_title(title)
+        ax.legend(fontsize=8, loc="best"); ax.tick_params(axis="x", rotation=30)
+    fig.tight_layout()
+    return fig

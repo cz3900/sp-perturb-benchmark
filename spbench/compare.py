@@ -52,11 +52,12 @@ def evaluate_seed(niches, eval_X=None, repeats=20, seed=0, max_n=300):
     scoring. repeats/seed/max_n control the matched-n energy resampling for `e_samples`."""
     obs = _apply_eval_X(niches.get("seed_obs", np.zeros((0, 0))), eval_X)
     pred = _apply_eval_X(niches.get("seed_pred", np.zeros((0, 0))), eval_X)
+    pred_e = _apply_eval_X(niches.get("seed_pred_resid", niches.get("seed_pred", np.zeros((0, 0)))), eval_X)
     ref = _apply_eval_X(niches.get("seed_ref", np.zeros((0, 0))), eval_X)
     if len(obs) == 0 or len(pred) == 0 or len(ref) == 0:
         return {"pcc_delta": float("nan"), "mse": float("nan"), "n": int(len(obs)),
                 "e_samples": {}}
-    clouds = {"model": pred, "null": ref}
+    clouds = {"model": pred_e, "null": ref}
     n = max(2, min(len(obs), len(pred), len(ref), max_n))
     rng = np.random.default_rng(seed + 1)
     samp = {k: [] for k in clouds}

@@ -147,6 +147,16 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
         else:
             seed_pred = np.array([seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
                                   for rc in refs])
+        # variance-restored seed for the ENERGY readout (pcc/mse stay on the raw mean seed): mirror
+        # the niche path's control residual so a collapsed mean-field seed isn't structurally
+        # penalised by the energy distance. data.X space only — when eval_X is an ndarray (scGEN
+        # log-norm) the seed already carries variance in its own space and the data.X residual pool
+        # would be the wrong space.
+        if residuals is not None and not isinstance(eval_X, np.ndarray) and len(seed_pred):
+            _rng_s = np.random.default_rng(noise_seed + 7)
+            seed_pred_resid = seed_pred + _draw_residuals(residuals, data.cell_type[centers], _rng_s)
+        else:
+            seed_pred_resid = seed_pred
         seed_ref_idx = np.unique(np.concatenate(refs)) if len(refs) else np.array([], int)
         # eval_X is dual-semantic (cross-task convention #1, pcc_delta is NOT space-robust):
         #   - np.ndarray (G6 scGEN log-norm matrix): the model's seed_pred already lives in this
@@ -167,6 +177,7 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
         grid["_niches"] = {"observed": observed, "reference": gt["reference_niche"],
                            "1": cells["1"], "2": cells["2"], "3": cells["3"], "4": cells["4"],
                            "seed_obs": seed_obs, "seed_pred": seed_pred,
+                           "seed_pred_resid": seed_pred_resid,
                            "seed_ref": seed_ref,
                            "eval_X": carried_eval_X}   # transform carried downstream (callable/None)
     return grid
