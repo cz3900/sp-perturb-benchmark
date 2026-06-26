@@ -50,6 +50,13 @@ def main():                                          # pragma: no cover (needs s
         adata.write_h5ad(args.h5ad)                  # persist split for the API's file reads
     ids = sorted(adata.obs["mouse_id"].astype(str).unique().tolist())   # disjoint id groups
     exp = f"sp_{args.pert}"
+    # Wipe any stale/partial dataset cache for this guide UP FRONT (before train AND predict). An
+    # interrupted build leaves an empty/partial processed_dir that spatial_gnn's process() silently
+    # reuses -> wrong or 0-cell results. Done once here so both train and predict rebuild clean.
+    import os, glob, shutil
+    _cache = os.path.join(os.path.dirname(os.path.abspath(args.h5ad)), "data", "gnn_datasets")
+    for _d in glob.glob(os.path.join(_cache, f"{exp}_*")):
+        shutil.rmtree(_d, ignore_errors=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     _, gene_names, (_, _, trained_model_path) = train_perturbation_model(
         file_path=args.h5ad, train_ids=ids[:-1], test_ids=ids[-1:], exp_name=exp,
@@ -60,13 +67,6 @@ def main():                                          # pragma: no cover (needs s
     save_path = args.h5ad.replace(".h5ad", f"_{args.pert}_perturbed.h5ad")
     create_perturbation_input_matrix(adata, pert, mask_key="perturbed_input",
                                      save_path=save_path, normalize_total=True)
-    # Force a fresh dataset cache for this guide. spatial_gnn's process() silently REUSES any
-    # existing processed_dir — even an EMPTY one left by an interrupted build — yielding
-    # "Predicted on 0 cells" and a no-op dump. Wipe this guide's caches before predicting.
-    import os, glob, shutil
-    _cache = os.path.join(os.path.dirname(os.path.abspath(args.h5ad)), "data", "gnn_datasets")
-    for _d in glob.glob(os.path.join(_cache, f"{exp}_*")):
-        shutil.rmtree(_d, ignore_errors=True)
     result = predict_perturbation_effects(adata_path=save_path, model_path=trained_model_path,
                                           exp_name=exp, use_ids=ids, whole_tissue=True)
     pred = np.asarray(result.layers["predicted_tempered"], float)
