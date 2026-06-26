@@ -100,23 +100,24 @@ def estimate_offset(bin_xy, cell_centroids):
 def assign_bins_to_cells(bin_xy, cell_ids, polys, cell_centroids=None, offset=None):
     """Point-in-polygon assignment of each bin to a cell_id (-1 if in intercellular space).
 
-    bin_xy: (n_bins, 2) full-res pixel [x, y]. Returns (bin_cellid[int64, -1=none], offset)."""
-    from shapely.geometry import Polygon, Point
-    from shapely.strtree import STRtree
+    bin_xy: (n_bins, 2) full-res pixel [x, y]. Returns (bin_cellid[int64, -1=none], offset).
+    Vectorized via shapely 2 STRtree bulk query (predicate='contains'); a bin overlapping >1 cell
+    polygon keeps the first match."""
+    import shapely
+    from shapely.geometry import Polygon
+    from shapely import STRtree
     if offset is None:
         if cell_centroids is None:
             cell_centroids = np.array([p.mean(axis=0) for p in polys])
         offset = estimate_offset(bin_xy, cell_centroids)
     bxy = bin_xy - offset
-    geoms = [Polygon(p) for p in polys]
-    tree = STRtree(geoms)
+    pts = shapely.points(bxy[:, 0], bxy[:, 1])
+    tree = STRtree([Polygon(p) for p in polys])
+    bin_idx, poly_idx = tree.query(pts, predicate="contains")   # poly contains point
     out = np.full(len(bxy), -1, dtype=np.int64)
-    for i in range(len(bxy)):
-        pt = Point(bxy[i, 0], bxy[i, 1])
-        for j in tree.query(pt):            # shapely>=2 returns integer indices
-            if geoms[int(j)].contains(pt):
-                out[i] = cell_ids[int(j)]
-                break
+    cids = np.asarray(cell_ids)
+    # first match wins: assign in reverse so the earliest pair overwrites last
+    out[bin_idx[::-1]] = cids[poly_idx[::-1]]
     return out, offset
 
 
