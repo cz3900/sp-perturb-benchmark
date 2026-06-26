@@ -97,27 +97,44 @@ def estimate_offset(bin_xy, cell_centroids):
     return bin_xy.mean(axis=0) - cell_centroids.mean(axis=0)
 
 
-def assign_bins_to_cells(bin_xy, cell_ids, polys, cell_centroids=None, offset=None):
-    """Point-in-polygon assignment of each bin to a cell_id (-1 if in intercellular space).
+def cell_radii(polys, cell_centroids):
+    """Per-cell radius = max vertex distance from its centroid (containment proxy for the KNN gate)."""
+    return np.array([np.sqrt(((p - c) ** 2).sum(axis=1)).max() for p, c in zip(polys, cell_centroids)])
 
-    bin_xy: (n_bins, 2) full-res pixel [x, y]. Returns (bin_cellid[int64, -1=none], offset).
-    Vectorized via shapely 2 STRtree bulk query (predicate='contains'); a bin overlapping >1 cell
-    polygon keeps the first match."""
+
+def assign_bins_to_cells(bin_xy, cell_ids, polys, cell_centroids=None, offset=None,
+                         method="knn", radii=None, radius_scale=1.0):
+    """Assign each bin to a cell_id (-1 if intercellular). Returns (bin_cellid[int64], offset).
+
+    bin_xy: (n_bins, 2) full-res pixel [x, y].
+    method='knn' (default): nearest cell centroid via scipy cKDTree, gated by the cell's radius
+      (assign only if dist <= radius_scale * radius[nearest]). O(n log n) -- seconds for ~600k bins;
+      densely-tiled cells make this ~equivalent to point-in-polygon (validated containment ~94%). The
+      exact shapely point-in-polygon path (method='polygon') is correct but builds ~300k Polygons and
+      is far slower; kept for spot-checking.
+    """
+    if cell_centroids is None:
+        cell_centroids = np.array([p.mean(axis=0) for p in polys])
+    if offset is None:
+        offset = estimate_offset(bin_xy, cell_centroids)
+    bxy = bin_xy - offset
+    cids = np.asarray(cell_ids)
+
+    if method == "knn":
+        from scipy.spatial import cKDTree
+        if radii is None:
+            radii = cell_radii(polys, cell_centroids)
+        dist, idx = cKDTree(cell_centroids).query(bxy, k=1)
+        ok = dist <= radius_scale * radii[idx]
+        return np.where(ok, cids[idx], -1).astype(np.int64), offset
+
     import shapely
     from shapely.geometry import Polygon
     from shapely import STRtree
-    if offset is None:
-        if cell_centroids is None:
-            cell_centroids = np.array([p.mean(axis=0) for p in polys])
-        offset = estimate_offset(bin_xy, cell_centroids)
-    bxy = bin_xy - offset
     pts = shapely.points(bxy[:, 0], bxy[:, 1])
-    tree = STRtree([Polygon(p) for p in polys])
-    bin_idx, poly_idx = tree.query(pts, predicate="contains")   # poly contains point
+    bin_idx, poly_idx = STRtree([Polygon(p) for p in polys]).query(pts, predicate="contains")
     out = np.full(len(bxy), -1, dtype=np.int64)
-    cids = np.asarray(cell_ids)
-    # first match wins: assign in reverse so the earliest pair overwrites last
-    out[bin_idx[::-1]] = cids[poly_idx[::-1]]
+    out[bin_idx[::-1]] = cids[poly_idx[::-1]]   # first match wins
     return out, offset
 
 

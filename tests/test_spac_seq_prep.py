@@ -47,3 +47,15 @@ def test_aggregate_guides_to_cells_sums_assigned_bins():
 def test_cellbarcode_to_id():
     assert P.cellbarcode_to_id("cellid_000000001-1") == 1
     assert P.cellbarcode_to_id("cellid_000000042-1") == 42
+
+
+def test_assign_bins_to_cells_knn_gates_by_radius():
+    # two unit-square cells centred at (0,0) and (10,0)
+    polys = [np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]], float),
+             np.array([[9, -1], [11, -1], [11, 1], [9, 1]], float)]
+    cell_ids = np.array([7, 9])
+    bins = np.array([[0.0, 0.0],     # -> cell 7
+                     [10.0, 0.5],    # -> cell 9
+                     [5.0, 0.0]])    # midpoint, beyond both radii -> -1
+    out, off = P.assign_bins_to_cells(bins, cell_ids, polys, offset=np.zeros(2), method="knn")
+    assert out.tolist() == [7, 9, -1]
