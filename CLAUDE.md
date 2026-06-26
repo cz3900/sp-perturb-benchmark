@@ -77,7 +77,7 @@ loaders that need constructor args (`ScgenSeedModel`, `ConcertModel` — constru
   distribution-vs-distribution; a collapsed point prediction (mean-field seed) is structurally
   penalised regardless of whether its mean is right. The current direction is to make **PCC-delta
   (mean-shift direction + magnitude) the primary metric** and demote E-distance to genuinely
-  distributional predictors. See `model/明早问_2026-06-25.md` for the live design decisions.
+  distributional predictors. See `../docs/明早问_2026-06-25.md` for the live design decisions.
 
 ## Datasets (real data — lab server only, read-only under `/home/yiru/`)
 
@@ -89,9 +89,9 @@ loaders that need constructor args (`ScgenSeedModel`, `ConcertModel` — constru
 | `cheng` | Cheng Perturb-RAEFISH A549 | `/home/yiru/database/spatial_perturbation_collection/REAFISH_data/Datasets/A549/Perturb_RAEFISH/` (`.mat` + codebooks) | single cell line (degenerate mode); `Codebook_RaeFISH.Target` maps Top1ID→KO gene |
 | `shen` | Shen Spatial Perturb-seq brain | `/home/yiru/database/spatial_perturbed_processed/CRISPR_based/Shen_2024_preprint/` (`.h5mu`) | whole-transcriptome, no NTC (uses `control_pool` fallback); `mSafe`→control, `Non-perturbed`→none |
 
-Per-dataset adaptation details + gotchas: `model/空间扰动benchmark_数据集适配记录_2026-06-24.md` and
-`model/Dhainaut数据集_问题与处理_2026-06-24.md` (these design docs live in the parent `model/`
-workspace, not the repo). Each adapter has a `runs/verify_<dataset>.py` smoke script that loads the
+Per-dataset adaptation details + gotchas: `../docs/空间扰动benchmark_数据集适配记录_2026-06-24.md` and
+`../docs/Dhainaut数据集_问题与处理_2026-06-24.md` (these design docs live in the sibling
+`model/spatial-pert/docs/` folder, not the repo). Each adapter has a `runs/verify_<dataset>.py` smoke script that loads the
 real data on the server.
 
 ## Running on the lab server (`zenglab`)
@@ -154,7 +154,7 @@ What lives on the server outside the repo:
 
 - Implementation plans: `docs/superpowers/plans/` (`00-roadmap.md` is the index; Plans 1–8 are done).
 - The evaluation framework (two model classes, three boards, per-prop upper bounds, seed/niche naming)
-  and the overall design live in the parent `model/` workspace:
-  `benchmark_评测框架_两类model_2026-06-25.md`, `benchmark_总设计_实现参考_2026-06-24.md`.
-- Open design decisions in flight: `model/明早问_2026-06-25.md` (metric → PCC-delta, per-cell-type /
+  and the overall design live in the sibling `model/spatial-pert/docs/` folder:
+  `../docs/benchmark_评测框架_两类model_2026-06-25.md`, `../docs/benchmark_总设计_实现参考_2026-06-24.md`.
+- Open design decisions in flight: `../docs/明早问_2026-06-25.md` (metric → PCC-delta, per-cell-type /
   niche-conditional stratified scoring, scGEN-niche space handling, unused-metric cleanup).
