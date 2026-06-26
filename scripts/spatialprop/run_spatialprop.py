@@ -60,13 +60,22 @@ def main():                                          # pragma: no cover (needs s
     save_path = args.h5ad.replace(".h5ad", f"_{args.pert}_perturbed.h5ad")
     create_perturbation_input_matrix(adata, pert, mask_key="perturbed_input",
                                      save_path=save_path, normalize_total=True)
+    # Force a fresh dataset cache for this guide. spatial_gnn's process() silently REUSES any
+    # existing processed_dir — even an EMPTY one left by an interrupted build — yielding
+    # "Predicted on 0 cells" and a no-op dump. Wipe this guide's caches before predicting.
+    import os, glob, shutil
+    _cache = os.path.join(os.path.dirname(os.path.abspath(args.h5ad)), "data", "gnn_datasets")
+    for _d in glob.glob(os.path.join(_cache, f"{exp}_*")):
+        shutil.rmtree(_d, ignore_errors=True)
     result = predict_perturbation_effects(adata_path=save_path, model_path=trained_model_path,
                                           exp_name=exp, use_ids=ids, whole_tissue=True)
     pred = np.asarray(result.layers["predicted_tempered"], float)
-    # fill NaN (unpredicted) cells with the normalized input (no change)
     base = np.asarray(result.layers.get("predicted_unperturbed", result.X), float)
     nan = ~np.isfinite(pred)
-    pred[nan] = base[nan]
+    if nan.all():                                    # predicted on 0 cells -> would be a silent no-op
+        raise SystemExit(f"{args.pert}: prediction is empty (0 cells) — refusing to write a no-op "
+                         f"dump (likely a stale/empty dataset cache).")
+    pred[nan] = base[nan]                            # fill any stray unpredicted cells (no change)
     import h5py
     with h5py.File(args.out, "w") as f:
         f.create_dataset("X", data=np.zeros_like(pred))
