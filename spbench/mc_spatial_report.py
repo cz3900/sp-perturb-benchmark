@@ -1,8 +1,10 @@
 """Stratified scoring report: quadrant x dimension, with the Inert quadrant as negative control.
 
 Consumes records that already carry an MC-spatial `quadrant` label per perturbation (produced by
-spbench.mc_spatial_join.join_quadrants) plus per-dimension gain fields (gain = e_null - e_method,
-the headline quantity in spbench.compare; >0 beats the no-effect baseline).
+spbench.mc_spatial_join.join_quadrants) plus per-dimension `gain` fields. `gain` here is a generic,
+caller-supplied per-dimension score advantage over the no-effect baseline (the benchmark feeds it
+the seed / niche PCC-delta; >0 beats predicting 'no effect'). This module is metric-agnostic — it
+only reads whatever numeric gain field the caller names.
 
 Stratification rule:
   D1 (self/seed)  is meaningful only where there is X-signal  -> {X-Only, Both}

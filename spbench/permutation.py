@@ -1,23 +1,22 @@
 import numpy as np
 from .propagation_gt import _bystander_neighbors
-from .metrics.energy import energy_distance
 
 
-def _matched_energy(A, B, rng, max_n):
+def _mean_shift(A, B, rng, max_n):
+    """Two-sample statistic: L2 norm of the difference of the two clouds' MEAN profiles,
+    ||mean(A) - mean(B)||. Mean-based (no energy distance), so it needs no internal subsampling;
+    `rng`/`max_n` are kept for signature compatibility with the permutation loop."""
     A = np.asarray(A, float); B = np.asarray(B, float)
     if len(A) < 1 or len(B) < 1:
         return float("nan")
-    n = max(2, min(len(A), len(B), max_n))
-    a = A[rng.choice(len(A), n, replace=False)] if len(A) > n else A
-    b = B[rng.choice(len(B), n, replace=False)] if len(B) > n else B
-    return energy_distance(a, b)
+    return float(np.linalg.norm(A.mean(0) - B.mean(0)))
 
 
 def _niche_cells(data, centers, edges):
     """Deduplicated bystander (non-perturbed) neighbour cells of `centers`. Dedup matters: a cell
     that neighbours several centers would otherwise appear once per center, and the duplication
     multiplicity differs between the perturbed centers and a random center set — a geometry artifact
-    that biases the energy distance even with no biological effect."""
+    that biases the two-sample statistic even with no biological effect."""
     nb = [_bystander_neighbors(data, c, edges) for c in centers]
     nb = np.concatenate(nb) if any(len(x) for x in nb) else np.array([], int)
     return np.unique(nb)
@@ -26,8 +25,8 @@ def _niche_cells(data, centers, edges):
 def permutation_null(data, perturbation, edges, n_perm=50, seed=0, max_n=300):
     """Empirical null for a perturbation's niche shift, as a two-sample RELABELING test.
 
-    Statistic for a center set C: matched-n energy distance between C's deduplicated bystander-cell
-    expression and a FIXED shared background = the expression of all non-perturbed cells.
+    Statistic for a center set C: the mean-shift norm ||mean - mean|| between C's deduplicated
+    bystander-cell expression and a FIXED shared background = the expression of all non-perturbed cells.
         real    = statistic(perturbed centers)
         null_i  = statistic(|centers| random non-perturbed 'fake' centers)        (n_perm draws)
         p       = (#{null >= real} + 1) / (len(null) + 1)
@@ -49,14 +48,14 @@ def permutation_null(data, perturbation, edges, n_perm=50, seed=0, max_n=300):
         return {"null": [], "real": float("nan"), "p": float("nan")}
     rng = np.random.default_rng(seed)
     Xbg = data.X[bg]
-    real = _matched_energy(data.X[pert_cells], Xbg, rng, max_n)
+    real = _mean_shift(data.X[pert_cells], Xbg, rng, max_n)
     null, k = [], min(len(centers), len(bg))
     for _ in range(n_perm):
         fake = rng.choice(bg, k, replace=False)
         fake_cells = _niche_cells(data, fake, edges)
         if len(fake_cells) == 0:
             continue
-        null.append(_matched_energy(data.X[fake_cells], Xbg, rng, max_n))
+        null.append(_mean_shift(data.X[fake_cells], Xbg, rng, max_n))
     null = [x for x in null if np.isfinite(x)]
     p = (np.sum(np.asarray(null) >= real) + 1) / (len(null) + 1) if null else float("nan")
     return {"null": null, "real": float(real), "p": float(p)}

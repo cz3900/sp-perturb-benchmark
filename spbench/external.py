@@ -20,10 +20,10 @@ def row_normalize(X, target_sum=1e4):
     return out
 
 
-def score_external_seed(data, perturbation, pred_full, eval_X=None, repeats=20, seed=0, max_n=300):
+def score_external_seed(data, perturbation, pred_full, eval_X=None):
     """Score an end-to-end model's prediction for the PERTURBED CENTER cells themselves (seed),
     symmetric to `score_external_niche` (which scores the bystander niche). Returns the
-    `evaluate_seed` dict (pcc_delta / mse / mag / n / e_samples).
+    `evaluate_seed` dict (pcc_delta / mse / mag / n).
 
     pred_full : (n_cells, n_genes) the model's predicted expression for ALL cells, already in the
                 same space as data.X (the caller row-normalizes both to a common target first).
@@ -44,20 +44,19 @@ def score_external_seed(data, perturbation, pred_full, eval_X=None, repeats=20, 
     niches = {"seed_obs": data.X[centers],
               "seed_pred": pred_full[centers],
               "seed_ref": data.X[seed_ref_idx]}
-    return evaluate_seed(niches, eval_X=eval_X, repeats=repeats, seed=seed, max_n=max_n)
+    return evaluate_seed(niches, eval_X=eval_X)
 
 
 def score_external_niche(data, perturbation, edges, niche_pred, name="external",
-                         residuals=None, eval_X=None, k_ref=5, repeats=20, seed=0, max_n=300):
-    """Score an external/end-to-end model's predicted bystander niche on the same matched-n energy
-    / gain / PCC-delta footing as the 2x2 cells. Builds the observed + no-effect-reference niches
-    via propagation_gt and passes `niche_pred` through compare_to_baseline(extra={name: niche_pred}).
-    Returns the compare_to_baseline dict (so res['e'][name], res['e_samples'][name], etc.).
+                         eval_X=None, k_ref=5):
+    """Score an external/end-to-end model's predicted bystander niche on the same PCC-delta footing
+    as the 2x2 cells. Builds the observed + no-effect-reference niches via propagation_gt and passes
+    `niche_pred` through compare_to_baseline(extra={name: niche_pred}). Returns the
+    compare_to_baseline dict (so res['pcc'][name], res['mag'][name], etc.).
 
     NOTE: only 'observed'/'reference' are supplied (no 2x2 cells) — compare_to_baseline builds its
     cell clouds via `for k in METHODS if k in niches`, so it tolerates their absence and scores just
     null + the external method here."""
     gt = propagation_gt(data, perturbation, edges, k_ref=k_ref)
     niches = {"observed": gt["perturbed_niche"], "reference": gt["reference_niche"]}
-    return compare_to_baseline(niches, residuals=residuals, repeats=repeats, seed=seed,
-                               max_n=max_n, extra={name: np.asarray(niche_pred, float)}, eval_X=eval_X)
+    return compare_to_baseline(niches, extra={name: np.asarray(niche_pred, float)}, eval_X=eval_X)

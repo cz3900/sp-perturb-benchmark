@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 from spbench.synthetic import make_synthetic
 from spbench.config import run_benchmark
-from spbench.plotting import plot_seed_prop
+from spbench.plotting import plot_delta
 
 
 def main():
@@ -15,7 +15,7 @@ def main():
     data = make_synthetic(seed=0)
     res = run_benchmark(data, perturbations=["P0"], gcn_kwargs={"hidden": 32, "epochs": 20},
                         progress=False)
-    fig = plot_seed_prop(res)
+    fig = plot_delta(res)
     fig.savefig(args.out, dpi=130, bbox_inches="tight")
     print("wrote", args.out)
 

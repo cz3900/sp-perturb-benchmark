@@ -13,7 +13,7 @@ def test_comp_l1_and_moran_are_planned():
 
 def test_list_metrics_active_only_excludes_planned():
     active = list_metrics(active_only=True)
-    assert "pcc_delta" in active and "mse" in active and "energy" in active
+    assert "pcc_delta" in active and "mse" in active
     assert "comp_l1" not in active and "moran_gap" not in active
     # default still lists everything (back-compat)
     assert set(list_metrics()) >= set(active) | {"comp_l1", "moran_gap"}

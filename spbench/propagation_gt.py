@@ -11,8 +11,8 @@ def propagation_gt(data, perturbation: str, edges: np.ndarray, k_ref: int = 5) -
     """Observed propagation effect for `perturbation`: the bystander neighbours of all perturbed
     centers vs the bystander neighbours of the SAME-CELL-TYPE control cells — a sample-level
     aggregate-control reference, NOT expression-matched reference centers. So `reference_niche` is
-    the 'no-effect' niche (e_null in spbench.compare): the neighbourhood of the average unperturbed
-    cell of that type. `k_ref` is kept for signature compatibility but no longer selects centers."""
+    the 'no-effect' niche (the `null` baseline in spbench.compare): the neighbourhood of the average
+    unperturbed cell of that type. `k_ref` is kept for signature compatibility but no longer selects centers."""
     centers = np.where(data.perturbation == perturbation)[0]
     pert_nb = np.concatenate([_bystander_neighbors(data, c, edges) for c in centers]) \
         if len(centers) else np.array([], int)

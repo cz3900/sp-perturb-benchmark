@@ -5,8 +5,8 @@ from ..graph import neighbors_of
 
 class MockEndToEnd(EndToEndModel):
     """A stand-in end-to-end model for testing the external-model path: its predicted bystander
-    niche is the OBSERVED bystander niche plus gaussian noise (so it sits near the oracle ceiling,
-    clearly below the null). NOT a real model — it reads observed expression, which a real model may
+    niche is the OBSERVED bystander niche plus gaussian noise (so its niche PCC-delta is near 1,
+    clearly above the null). NOT a real model — it reads observed expression, which a real model may
     not. Use only to exercise plumbing/plots."""
     name = "mock_end_to_end"
 

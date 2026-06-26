@@ -36,39 +36,6 @@ def _control_reference_aggregate(data, edges):
         X_ref[data.cell_type == ct] = agg.expr[ct]
     return X_ref
 
-def _control_residuals(data):
-    """Per-cell-type pool of CONTROL residuals (X_control - its cell-type control mean), plus a
-    global pool fallback under key None.
-
-    A propagation model emits one vector per cell — the conditional *mean*. The observed niche is
-    a full-variance cloud (spread ~6), so scoring a near-degenerate mean-field cloud with the
-    energy distance (a *distributional* metric) inflates it structurally, regardless of whether
-    the predicted shift is right. Adding a sampled control residual to each predicted cell is the
-    deterministic analogue of a generative model drawing per-cell samples around its mean: it
-    restores realistic per-cell biological variance without moving the mean, so the energy
-    distance measures the predicted SHIFT fairly. Residuals come only from CONTROL cells, never
-    from the observed perturbed niche, so they cannot leak."""
-    ctrl = data.control_pool
-    pools = {}
-    gmean = data.X[ctrl].mean(0) if ctrl.any() else data.X.mean(0)
-    pools[None] = (data.X[ctrl] - gmean) if ctrl.any() else (data.X - gmean)
-    for ct in np.unique(data.cell_type):
-        m = ctrl & (data.cell_type == ct)
-        if m.any():
-            pools[ct] = data.X[m] - data.X[m].mean(0)
-    return pools
-
-def _draw_residuals(pools, cell_types, rng):
-    """One sampled residual per cell, drawn from its cell-type pool (global pool as fallback)."""
-    g = pools[None]
-    out = np.empty((len(cell_types), g.shape[1]), float)
-    for i, ct in enumerate(cell_types):
-        R = pools.get(ct, g)
-        if len(R) == 0:
-            R = g
-        out[i] = R[rng.integers(len(R))] if len(R) else 0.0
-    return out
-
 def _xref_from(Xexpr, data):
     """Per-cell control-reference matrix in the space of `Xexpr`: each cell -> mean of Xexpr over
     control-pool cells of its cell type (global control mean fallback). Mirrors
@@ -83,56 +50,42 @@ def _xref_from(Xexpr, data):
     return Xr
 
 
-def _residuals_from(Xexpr, data):
-    """Per-cell-type control residual pools in the space of `Xexpr` (+ global pool under None).
-    Mirrors _control_residuals but in an explicit space (e.g. eval_X / scGEN log-norm)."""
-    pool = data.control_pool
-    pools = {None: (Xexpr[pool] - (Xexpr[pool].mean(0) if pool.any() else Xexpr.mean(0)))
-             if pool.any() else (Xexpr - Xexpr.mean(0))}
-    for ct in np.unique(data.cell_type):
-        m = pool & (data.cell_type == ct)
-        if m.any():
-            pools[ct] = Xexpr[m] - Xexpr[m].mean(0)
-    return pools
+def _pcc_prop(pred, observed, reference):
+    """Niche PCC-delta of a 2x2 cell's predicted bystander cloud vs the observed perturbed niche,
+    with the reference (no-effect) niche as the shift baseline. Higher = better (right direction).
+    The 2x2 grid score: it replaces the retired energy distance — same per-cell structure, but a
+    mean-based, bounded, direction metric."""
+    return get_metric("pcc_delta").compute(pred, observed, {"reference": reference})
 
 
 def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop, k_ref=5,
-             X_ref=None, return_niches=False, residuals=None, noise_seed=0, eval_X=None):
+             X_ref=None, return_niches=False, noise_seed=0, eval_X=None):
     """Fill the seed×propagation 2×2 for one perturbation.
     Rows = {GT seed, Model seed}, Cols = {baseline prop, learned prop}.
-    Each cell scores propagation E-distance vs the observed perturbed-niche distribution.
-
-    `residuals` (from `_control_residuals`) gives every predicted cell realistic per-cell
-    variance so the energy distance compares the predicted *shift* fairly instead of penalising
-    the variance collapse of a mean-field prediction (see `_control_residuals`). The residual
-    draws are reseeded identically for each of the four cells, so e1..e4 differ only by their
-    mean field. Pass residuals=None to score the raw mean-only predictions.
+    Each cell scores its propagated bystander cloud vs the observed perturbed-niche distribution
+    with a niche PCC-delta (`pcc_prop`, higher = better, reference niche as the shift baseline).
 
     With return_niches=True the grid also carries `_niches` = {observed, reference, "1".."4"}
     (the predicted bystander-niche arrays for all four 2x2 cells) so each can be compared to the
     no-effect baseline downstream via spbench.compare."""
-    energy = get_metric("energy")
     centers = np.where(data.perturbation == perturbation)[0]
     gt = propagation_gt(data, perturbation, edges, k_ref=k_ref)
 
     # niche scoring space: when eval_X is the (n_cells, G) co-scoring matrix (e.g. scGEN's log-norm
     # space) build the WHOLE niche path in it, so a model whose seed lives there (scGEN) is scored
-    # consistently — observed/reference niche, the control X_ref, and the residual pools all come
-    # from eval_X. Otherwise everything stays in data.X (the default baseline path, unchanged).
+    # consistently — observed/reference niche and the control X_ref all come from eval_X. Otherwise
+    # everything stays in data.X (the default baseline path, unchanged).
     cospace = isinstance(eval_X, np.ndarray)
     Xn = np.asarray(eval_X, float) if cospace else data.X
     observed = Xn[gt["pert_nb"]]
+    reference = Xn[gt["ref_nb"]]
 
     refs = control_reference_centers(data, centers)   # aggregate control: same-cell-type control cells, no feature match
     if cospace:
         X_ref = _xref_from(Xn, data)
-        # recompute the residual pool in Xn space (the passed-in one is data.X space), but only when
-        # the caller actually wants a distributional readout (residuals is not None).
-        res_pool = _residuals_from(Xn, data) if residuals is not None else None
     else:
         if X_ref is None:
             X_ref = _control_reference(data)   # propagation starts from the control niche, NOT the observed one
-        res_pool = residuals
 
     # ScgenSeedModel (and any loader exposing `.centers()`) caches a per-center-ALIGNED
     # (n_centers, G) seed array; predict_seed IGNORES reference_cells and returns the WHOLE array,
@@ -149,14 +102,13 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
         per_center_seed = {int(c): cached[row_of[int(c)]] for c in centers}
 
     def collect(use_gt_seed, prop_model):
-        rng = np.random.default_rng(noise_seed)   # identical residual draws across the 4 cells
         preds = []
         for c, rc in zip(centers, refs):
             nb = _bystanders(data, c, edges)
             if len(nb) == 0:
                 continue
             if use_gt_seed:
-                seed_state = Xn[c]                                         # oracle: true perturbed center (in scoring space)
+                seed_state = Xn[c]                                         # GT seed: true perturbed center (in scoring space)
             elif per_center_seed is not None:
                 seed_state = per_center_seed[int(c)]                       # this center's OWN cached row (already in eval_X space)
             else:
@@ -164,8 +116,6 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
                 # no feature matching), never the center's own value -> one seed per cell type
                 seed_state = seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
             pred = prop_model.propagate(X_ref, edges, c, seed_state, nb)
-            if res_pool is not None:                                       # distributional readout
-                pred = pred + _draw_residuals(res_pool, data.cell_type[nb], rng)
             preds.append(pred)
         return np.vstack(preds) if preds else np.zeros((0, Xn.shape[1]))
 
@@ -175,7 +125,7 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
         "3": collect(False, baseline_prop),
         "4": collect(False, learned_prop),
     }
-    grid = {k: {"energy_prop": energy.compute(v, observed)} for k, v in cells.items()}
+    grid = {k: {"pcc_prop": _pcc_prop(v, observed, reference)} for k, v in cells.items()}
     if return_niches:
         # seed evaluation data: model-seed prediction vs the observed perturbed centers, with the
         # matched control cells as the shift baseline (scored directly, not through the niche).
@@ -188,16 +138,6 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
         else:
             seed_pred = np.array([seed_model.predict_seed(perturbation, data.X[rc]).mean(0)
                                   for rc in refs])
-        # variance-restored seed for the ENERGY readout (pcc/mse stay on the raw mean seed): mirror
-        # the niche path's control residual so a collapsed mean-field seed isn't structurally
-        # penalised by the energy distance. data.X space only — when eval_X is an ndarray (scGEN
-        # log-norm) the seed already carries variance in its own space and the data.X residual pool
-        # would be the wrong space.
-        if residuals is not None and not isinstance(eval_X, np.ndarray) and len(seed_pred):
-            _rng_s = np.random.default_rng(noise_seed + 7)
-            seed_pred_resid = seed_pred + _draw_residuals(residuals, data.cell_type[centers], _rng_s)
-        else:
-            seed_pred_resid = seed_pred
         seed_ref_idx = np.unique(np.concatenate(refs)) if len(refs) else np.array([], int)
         # eval_X is dual-semantic (cross-task convention #1, pcc_delta is NOT space-robust):
         #   - np.ndarray (G6 scGEN log-norm matrix): the model's seed_pred already lives in this
@@ -215,10 +155,9 @@ def fill_2x2(data, perturbation, edges, seed_model, baseline_prop, learned_prop,
             seed_obs = data.X[centers]
             seed_ref = data.X[seed_ref_idx]
             carried_eval_X = eval_X
-        grid["_niches"] = {"observed": observed, "reference": Xn[gt["ref_nb"]],   # reference co-spaced with observed
+        grid["_niches"] = {"observed": observed, "reference": reference,   # reference co-spaced with observed
                            "1": cells["1"], "2": cells["2"], "3": cells["3"], "4": cells["4"],
                            "seed_obs": seed_obs, "seed_pred": seed_pred,
-                           "seed_pred_resid": seed_pred_resid,
                            "seed_ref": seed_ref,
                            "eval_X": carried_eval_X}   # transform carried downstream (callable/None)
     return grid

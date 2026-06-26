@@ -1,7 +1,7 @@
 import yaml
 import numpy as np
 from .graph import build_knn_graph
-from .harness import fill_2x2, _control_reference, _control_reference_aggregate, _control_residuals
+from .harness import fill_2x2, _control_reference, _control_reference_aggregate
 from .judge import attribute, leakage_pass
 from .compare import compare_to_baseline, evaluate_seed
 from .permutation import permutation_null
@@ -12,17 +12,13 @@ from .adapters import get_adapter
 
 
 def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, progress=True,
-                  compare=True, distributional=True, n_perm=None, perm_seed=0,
+                  compare=True, n_perm=None, perm_seed=0,
                   external_models=None):
     """Run the MVP benchmark on a StandardData. Returns grids + attribution + leakage flags, and
-    (compare=True) a comparison of every 2x2 cell to the no-effect baseline per perturbation:
-    res['compare'][p] = {'e': {method: energy distance to observed}, 'gain': {method: e_null - e},
-    'n', 'has_effect'}. gain > 0 means the method beats predicting 'the neighbours did not change'.
-
-    distributional=True (default) gives each predicted cell realistic per-cell variance (sampled
-    control residuals) before scoring, so the energy distance compares the predicted *shift* fairly
-    rather than penalising the variance collapse of a mean-field prediction. Set False to score the
-    raw mean-only predictions (variance-collapsed, energy distance structurally inflated)."""
+    (compare=True) a niche PCC-delta of every 2x2 cell vs the no-effect baseline per perturbation:
+    res['compare'][p] = {'pcc': {method: PCC-delta to observed}, 'mag': {method: relative shift
+    size}, 'n'}. pcc > 0 means the method moves the niche in the right direction; pcc['null'] is
+    NaN (a flat no-effect shift has no direction)."""
     gcn_kwargs = gcn_kwargs or {}
     edges = build_knn_graph(data, k=k)
     seed = TrivialSeed().fit(data)
@@ -34,7 +30,6 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
     # the kNN `edges` graph (already built above) for its bystander-niche aggregation. The legacy
     # `_control_reference(data)` is kept in harness.py as the documented fallback.
     X_ref = _control_reference_aggregate(data, edges)   # identical across perturbations -> compute once
-    residuals = _control_residuals(data) if distributional else None
     grids, attrib, leak, cmp, seed_eval = {}, {}, {}, {}, {}
     _bar = perturbations
     if progress:
@@ -45,21 +40,20 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
             _bar = perturbations
     for p in _bar:
         g = fill_2x2(data, p, edges, seed, base, learned, k_ref=k_ref, X_ref=X_ref,
-                     return_niches=compare, residuals=residuals)
+                     return_niches=compare)
         if compare and "_niches" in g:
             niches = g.pop("_niches")
             eval_X = niches.get("eval_X")                               # unified scoring-space transform
             # External / end-to-end models (CONCERT-style): their predicted bystander niche is
-            # scored on the SAME matched-n / gain / PCC-delta footing as the 2x2 cells via extra=.
+            # scored on the SAME PCC-delta footing as the 2x2 cells via extra=.
             extra = ({nm: m.predict_niche(data, p, edges) for nm, m in external_models.items()}
                      if external_models else None)
-            cmp[p] = compare_to_baseline(niches, residuals=residuals, eval_X=eval_X,
-                                         extra=extra)                   # niche: E-dist/gain + PCC-delta
+            cmp[p] = compare_to_baseline(niches, eval_X=eval_X, extra=extra)  # niche: PCC-delta + mag
             seed_eval[p] = evaluate_seed(niches, eval_X=eval_X)         # seed: PCC-delta + MSE (direct)
         grids[p] = g
         attrib[p] = attribute(g)
         leak[p] = leakage_pass(g)
-    ranking = sorted(perturbations, key=lambda p: attrib[p]["end_to_end"])
+    ranking = sorted(perturbations, key=lambda p: attrib[p]["end_to_end"], reverse=True)
     res = {"grids": grids, "attribution": attrib, "leakage_pass": leak, "ranking": ranking}
     if compare:
         res["compare"] = cmp
