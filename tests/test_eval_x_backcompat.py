@@ -43,11 +43,9 @@ def test_evaluate_seed_none_equals_legacy_call():
 
 def test_compare_none_equals_legacy_call():
     n = _niche_niches()
-    a = compare_to_baseline(n, repeats=4, seed=0)
-    b = compare_to_baseline(n, repeats=4, seed=0, eval_X=None)
-    for k in a["e"]:
-        _assert_scalar_equal(a["e"][k], b["e"][k])
-        _assert_scalar_equal(a["gain"][k], b["gain"][k])
+    a = compare_to_baseline(n)
+    b = compare_to_baseline(n, eval_X=None)
     for k in a["pcc"]:
         _assert_scalar_equal(a["pcc"][k], b["pcc"][k])
-    assert a["n"] == b["n"] and a["has_effect"] == b["has_effect"]
+        _assert_scalar_equal(a["mag"][k], b["mag"][k])
+    assert a["n"] == b["n"]

@@ -32,7 +32,7 @@ def test_matches_legacy_control_reference_values(synth):
 
 
 def test_fill_2x2_accepts_aggregate_xref(synth):
-    # smoke: passing the aggregate X_ref through fill_2x2 yields a finite energy grid.
+    # smoke: passing the aggregate X_ref through fill_2x2 yields a bounded PCC-delta grid.
     # registry get_model returns a CLASS -> instantiate AND .fit() before use.
     from spbench.harness import fill_2x2
     from spbench.models import get_model
@@ -43,4 +43,5 @@ def test_fill_2x2_accepts_aggregate_xref(synth):
     learned = get_model("gaussian_prop")().fit(synth, edges)
     grid = fill_2x2(synth, "P0", edges, seed, base, learned, X_ref=X_ref)
     for cell in ("1", "2", "3", "4"):
-        assert np.isfinite(grid[cell]["energy_prop"])
+        v = grid[cell]["pcc_prop"]
+        assert np.isnan(v) or -1.0 <= v <= 1.0

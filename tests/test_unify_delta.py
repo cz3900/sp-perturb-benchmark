@@ -1,7 +1,7 @@
 import numpy as np
 from spbench.data import StandardData
 from spbench.graph import build_knn_graph
-from spbench.harness import fill_2x2, _control_reference_aggregate, _control_residuals
+from spbench.harness import fill_2x2, _control_reference_aggregate
 from spbench.models.trivial_seed import TrivialSeed
 from spbench.models.gaussian_prop import GaussianProp
 from spbench.models.gcn_prop import SimpleGCN
@@ -21,29 +21,16 @@ def _planted(n_per=60, seed=0):
 def _niches(d):
     edges = build_knn_graph(d, k=10)
     sm = TrivialSeed().fit(d); base = GaussianProp().fit(d, edges); lr = SimpleGCN(hidden=8, epochs=3).fit(d, edges)
-    Xref = _control_reference_aggregate(d, edges); pool = _control_residuals(d)
-    g = fill_2x2(d, "P0", edges, sm, base, lr, k_ref=5, X_ref=Xref, return_niches=True, residuals=pool)
+    Xref = _control_reference_aggregate(d, edges)
+    g = fill_2x2(d, "P0", edges, sm, base, lr, k_ref=5, X_ref=Xref, return_niches=True)
     return g["_niches"]
 
-def test_seed_pred_resid_restores_variance():
-    n = _niches(_planted())
-    sp = np.asarray(n["seed_pred"]); spr = np.asarray(n["seed_pred_resid"])
-    assert sp.std(0).mean() < 1e-6
-    assert spr.std(0).mean() > 0.3
-    assert np.allclose(sp.mean(0), spr.mean(0), atol=0.25)
-
-def test_seed_energy_fair_after_residual():
+def test_seed_pcc_delta_recovers_direction():
     n = _niches(_planted())
     r = evaluate_seed(n)
-    m = float(np.mean(r["e_samples"]["model"])); nul = float(np.mean(r["e_samples"]["null"]))
-    assert m < 2.0 * nul
+    # the planted seed shift is gene 0 only; the model seed must recover that direction
     assert np.isfinite(r["pcc_delta"])
-
-def test_pcc_delta_residual_invariant():
-    n = _niches(_planted())
-    r_raw = evaluate_seed({k: v for k, v in n.items() if k != "seed_pred_resid"})
-    r_res = evaluate_seed(n)
-    assert abs(r_raw["pcc_delta"] - r_res["pcc_delta"]) < 1e-9
+    assert r["pcc_delta"] > 0.5
 
 def test_plot_delta_two_panels():
     import matplotlib; matplotlib.use("Agg")

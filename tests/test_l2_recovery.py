@@ -5,7 +5,6 @@ from spbench.graph import build_knn_graph, neighbors_of
 from spbench.niche import compute_niche_composition
 from spbench.propagation_gt import propagation_gt
 from spbench.compare import compare_to_baseline
-from spbench.harness import _control_residuals
 from spbench.metrics import get_metric
 from spbench.metrics.pcc_delta import delta_corr
 
@@ -56,27 +55,25 @@ def test_d2_propagation_recovered_for_significant_zero_for_inert():
     assert abs(obs[:, pg].mean() - ref[:, pg].mean()) < 0.3
 
 
-def test_compare_has_effect_flag_tracks_injection():
-    """The compare orchestration's has_effect flag (with the oracle floor supplied via
-    residuals) must be True for the significant perturbation and False for the inert one,
-    and the inert null distance must be strictly smaller than the significant one's."""
+def test_compare_recovers_niche_direction_for_significant():
+    """The compare orchestration's niche PCC-delta for the GT-seed cells must recover the planted
+    niche direction (finite, positive) for the significant perturbation."""
     d = make_synthetic_with_effects(seed=0, grid=24)
     eff = d.meta["effects"]
     edges = build_knn_graph(d, k=8)
-    resid = _control_residuals(d)          # oracle floor; without it has_effect is always True
 
     def niches(p):
         gt = propagation_gt(d, p, edges, k_ref=5)
-        return {"observed": gt["perturbed_niche"], "reference": gt["reference_niche"]}
+        obs, ref = gt["perturbed_niche"], gt["reference_niche"]
+        return {"observed": obs, "reference": ref, "1": obs, "2": obs.copy()}
 
     sig = eff["significant"][0]
-    res_sig = compare_to_baseline(niches(sig), residuals=resid, repeats=10, seed=0)
-    assert res_sig["has_effect"] is True
-
-    inert = eff["inert"][0]
-    res_inert = compare_to_baseline(niches(inert), residuals=resid, repeats=10, seed=0)
-    assert res_inert["e"]["null"] < res_sig["e"]["null"]
-    assert res_inert["has_effect"] is False
+    res_sig = compare_to_baseline(niches(sig))
+    # a cell holding the observed niche itself reproduces the observed shift -> PCC-delta ~ 1
+    assert np.isfinite(res_sig["pcc"]["GT+base"])
+    assert res_sig["pcc"]["GT+base"] > 0.5
+    # the no-effect baseline has a flat shift -> NaN direction (sanity check)
+    assert np.isnan(res_sig["pcc"]["null"])
 
 
 def test_uninjected_dimension_is_near_zero():

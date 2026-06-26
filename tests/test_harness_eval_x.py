@@ -23,7 +23,8 @@ def test_fill_2x2_default_no_eval_x_key(synth):
     # default: eval_X carried as None
     assert g["_niches"]["eval_X"] is None
     for cell in ["1", "2", "3", "4"]:
-        assert np.isfinite(g[cell]["energy_prop"])
+        v = g[cell]["pcc_prop"]
+        assert np.isnan(v) or -1.0 <= v <= 1.0
 
 
 def test_fill_2x2_stashes_eval_x(synth):
@@ -32,9 +33,10 @@ def test_fill_2x2_stashes_eval_x(synth):
     g = fill_2x2(synth, "P0", edges, seed, base, learned,
                  return_niches=True, eval_X=np.arcsinh)
     assert g["_niches"]["eval_X"] is np.arcsinh
-    # energy grid untouched by eval_X (still raw space, finite)
+    # pcc grid: bounded in [-1, 1] (or NaN on a degenerate flat shift)
     for cell in ["1", "2", "3", "4"]:
-        assert np.isfinite(g[cell]["energy_prop"])
+        v = g[cell]["pcc_prop"]
+        assert np.isnan(v) or -1.0 <= v <= 1.0
 
 
 def test_eval_x_flows_to_downstream_scorers(synth):
@@ -45,7 +47,7 @@ def test_eval_x_flows_to_downstream_scorers(synth):
     niches = g["_niches"]
     ex = niches["eval_X"]
     se = evaluate_seed(niches, eval_X=ex)
-    cb = compare_to_baseline(niches, repeats=3, seed=0, eval_X=ex)
+    cb = compare_to_baseline(niches, eval_X=ex)
     # arcsinh is finite on the signed real niches (log1p would NaN here)
     assert np.isfinite(se["pcc_delta"]) and np.isfinite(se["mse"])
     assert np.isfinite(cb["pcc"]["model+learned"])

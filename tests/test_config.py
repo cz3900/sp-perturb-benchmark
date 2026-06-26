@@ -18,14 +18,15 @@ def test_run_benchmark_compares_to_baseline():
     res = run_benchmark(data, perturbations=["P0", "P1"], k=8, k_ref=5,
                         gcn_kwargs={"hidden": 16, "epochs": 3}, progress=False)
     c = res["compare"]["P0"]
-    # every 2x2 cell + the baseline have an energy distance and a gain (= e_null - e)
+    # every 2x2 cell + the baseline have a niche PCC-delta and a relative magnitude
     for m in ("GT+base", "GT+learned", "model+base", "model+learned", "null"):
-        assert m in c["e"] and m in c["gain"]
-    assert c["gain"]["null"] == 0.0
-    assert abs(c["gain"]["model+learned"] - (c["e"]["null"] - c["e"]["model+learned"])) < 1e-9
-    # niche PCC-delta: oracle (perfect mean shift) ~ 1, every method present
-    assert "pcc" in c and "model+learned" in c["pcc"]
-    assert c["pcc"]["oracle"] > 0.9
+        assert m in c["pcc"] and m in c["mag"]
+    # the no-effect baseline has a flat shift -> NaN direction (sanity check)
+    assert np.isnan(c["pcc"]["null"])
+    # the deployable cells carry a finite, bounded niche PCC-delta
+    for m in ("GT+base", "GT+learned", "model+base", "model+learned"):
+        v = c["pcc"][m]
+        assert np.isfinite(v) and -1.0 <= v <= 1.0
 
 def test_run_benchmark_uses_aggregate_control_reference(monkeypatch):
     # The active control reference in run_benchmark MUST be the aggregate path

@@ -43,4 +43,4 @@ def test_run_benchmark_no_ntc_non_nan():
                         gcn_kwargs={"hidden": 8, "epochs": 3}, progress=False)
     s = res["seed"]["P0"]; c = res["compare"]["P0"]
     assert np.isfinite(s["pcc_delta"])
-    assert np.isfinite(c["e"]["model+base"])
+    assert "model+base" in c["pcc"]

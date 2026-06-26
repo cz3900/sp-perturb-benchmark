@@ -67,6 +67,6 @@ def test_compare_accepts_extra_concert_cloud():
         niches[k] = rng.normal(size=(60, g))
     concert = rng.normal(size=(60, g))
     res = compare_to_baseline(niches, extra={"CONCERT": concert})
-    for field in ("e", "gain", "pcc"):
+    for field in ("pcc", "mag"):
         assert "CONCERT" in res[field]
-    assert abs(res["gain"]["CONCERT"] - (res["e"]["null"] - res["e"]["CONCERT"])) < 1e-9
+    assert "null" in res["pcc"]
