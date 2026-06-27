@@ -1,0 +1,9 @@
+# SPAC-seq subQ — RANDOM-10 perturbations (seed=0, restricted to >=100 perturbed cells so each is
+# scoreable). Counts: Adap1 303, Bmpr1a 148, Ccn1 492, Cd74 2180, Mr1 471, Mst1r 223,
+#                     Pdzk1ip1 186, Pgap6 221, Pmp22 569, Slc52a2 154.
+adapter: spac_seq
+adapter_kwargs:
+  path: /home/yiru/database/spatial_perturbed_processed/CRISPR_based/SPAC-seq_2026/subQ.h5mu
+k: 15
+k_ref: 5
+perturbations: [Adap1, Bmpr1a, Ccn1, Cd74, Mr1, Mst1r, Pdzk1ip1, Pgap6, Pmp22, Slc52a2]

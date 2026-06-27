@@ -1,0 +1,9 @@
+# SPAC-seq subQ — TOP-10 perturbations by perturbed-cell count (eval subset).
+# Counts (subQ.h5mu): Bcam 20978, Rab8a 11732, Il4ra 7313, Tff3 6049, Cks1b 5464,
+#                     Ehf 5011, App 4098, H2-DMb1 3560, Fkrp 3094, Ptk6 2840.
+adapter: spac_seq
+adapter_kwargs:
+  path: /home/yiru/database/spatial_perturbed_processed/CRISPR_based/SPAC-seq_2026/subQ.h5mu
+k: 15
+k_ref: 5
+perturbations: [Bcam, Rab8a, Il4ra, Tff3, Cks1b, Ehf, App, H2-DMb1, Fkrp, Ptk6]
