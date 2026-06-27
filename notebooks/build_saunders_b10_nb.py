@@ -20,9 +20,10 @@ md("# Saunders b10 — SpatialProp vs CONCERT (PCC-delta)\n"
    "counts / CONCERT raw / SpatialProp normalize_total) are unified by **per-cell `row_normalize`** "
    "so PCC-delta is scale-clean. Run on the lab server, spatialprop env.")
 
-code("import sys, os, numpy as np, h5py\n"
+code("%matplotlib inline\n"
+     "import sys, os, numpy as np, h5py\n"
      "sys.path.insert(0, os.path.expanduser('~/spatial-pert/repo'))\n"
-     "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt\n"
+     "import matplotlib.pyplot as plt\n"
      "from spbench.adapters import SaundersAdapter\n"
      "from spbench.config import run_benchmark\n"
      "from spbench.external import row_normalize, score_external_seed\n"
