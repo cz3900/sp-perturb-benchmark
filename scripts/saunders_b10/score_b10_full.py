@@ -31,7 +31,7 @@ cpaths = {P: f"{CON}/saunders_b10_map_keep_{P}_perturbed_counts.h5ad" for P in G
 data = SaundersAdapter(os.path.expanduser("~/spatial-pert/inputs/saunders_b10_slice"),
                        max_files=1, counts_layer="X").load()
 data.X = row_normalize(data.meta["counts"])
-res = run_benchmark(data, GUIDES, k=15, gcn_kwargs={"hidden":64,"epochs":30}, distributional=False,
+res = run_benchmark(data, GUIDES, k=15, gcn_kwargs={"hidden":64,"epochs":30},
                     progress=False, external_models={"SpatialProp": NormNiche(SpatialPropModel(spaths)),
                                                       "CONCERT": NormNiche(ConcertModel(cpaths))})
 print("\n================ niche PCC-delta (higher=better) ================")
