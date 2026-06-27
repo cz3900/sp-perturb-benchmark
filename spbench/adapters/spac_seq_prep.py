@@ -220,10 +220,12 @@ def build_sample(sample_dir, spatial_meta_dir, sample_name, offset=None,
 
     bins = load_bin_pixel_coords(spatial_meta_dir)
     bin_guide, bin_bc, guide_names = read_anndata_h5(os.path.join(sample_dir, "filtered_guide_bc_matrix.h5"))
-    # align guide bins to parquet pixel coords (intersection, preserve guide-matrix row order)
-    keep = np.isin(bin_bc, bins.index.to_numpy())
-    bin_guide, bin_bc = bin_guide[keep], bin_bc[keep]
-    bin_xy = bins.loc[bin_bc, ["x", "y"]].to_numpy()
+    # align guide bins to parquet pixel coords (intersection, preserve guide-matrix row order).
+    # pandas hashed lookup, NOT np.isin -- the latter is O(n*m) on 600k string arrays (hours).
+    pos = bins.index.get_indexer(bin_bc)
+    keep = pos >= 0
+    bin_guide = bin_guide[keep]
+    bin_xy = bins.iloc[pos[keep]][["x", "y"]].to_numpy()
 
     bin_cellid, offset = assign_bins_to_cells(bin_xy, poly_ids, polys, cents, offset=offset)
     cell_guide = aggregate_guides_to_cells(bin_guide, bin_cellid, cell_ids)
