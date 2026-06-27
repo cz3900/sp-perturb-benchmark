@@ -55,13 +55,15 @@ def neighbor_composition(data, centers, adj, cats) -> np.ndarray:
     return niche_composition(data.cell_type[nb], cats)
 
 
-def composition_effect(data, perturbation, adj, cats=None, n_perm: int = 0, seed: int = 0,
-                       control_label: str = CONTROL) -> dict:
+def composition_effect(data, perturbation, adj, cats=None, n_perm: int = 0, seed: int = 0) -> dict:
     """Observed niche cell-type effect of one guide, with TWO baselines (decision #1):
       - `overlap_ntc`    : Overlap(NTC-cell niche, KO-cell niche)  -> raw effect vs unperturbed;
       - `overlap_pooled` : Overlap(all-perturbed niche, KO niche)  -> guide-SPECIFIC (de-confounds
         the shared 'cells carrying a detected guide sit in different regions' axis seen in real data).
     Overlap = 1 - TV, so LOWER overlap = BIGGER niche shift. Niche = all spatial neighbours.
+
+    The NTC reference is `data.control_pool` (is_control cells, else the 'none' fallback) so the
+    baseline works across datasets without a literal 'control' guide label (Shen, Dhainaut, ...).
 
     n_perm > 0 adds a permutation p-value: shuffle this-guide vs NTC labels (keeping n_ko fixed),
     recompute Overlap_ntc, p = fraction of permutations whose shift is >= the observed shift
@@ -70,7 +72,7 @@ def composition_effect(data, perturbation, adj, cats=None, n_perm: int = 0, seed
     if cats is None:
         cats = np.array(sorted({str(c) for c in data.cell_type}), dtype=object)
     ko = np.where(data.perturbation == perturbation)[0]
-    ntc = np.where(data.perturbation == control_label)[0]
+    ntc = np.where(data.control_pool & ~data.is_perturbed)[0]
     pooled = np.where(data.is_perturbed)[0]
 
     ko_comp = neighbor_composition(data, ko, adj, cats)
