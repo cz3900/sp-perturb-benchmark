@@ -49,7 +49,8 @@ def run_benchmark(data, perturbations=None, k=15, k_ref=5, gcn_kwargs=None, prog
             # scored on the SAME PCC-delta footing as the 2x2 cells via extra=.
             extra = ({nm: m.predict_niche(data, p, edges) for nm, m in external_models.items()}
                      if external_models else None)
-            cmp[p] = compare_to_baseline(niches, eval_X=eval_X, extra=extra)  # niche: PCC-delta + mag
+            cmp[p] = compare_to_baseline(niches, eval_X=eval_X, extra=extra,
+                                         annotator=annotator)  # niche: PCC-delta + mag + Overlap
             seed_eval[p] = evaluate_seed(niches, eval_X=eval_X)         # seed: PCC-delta + MSE (direct)
         if composition:
             # D3 Overlap board. Observed gt vs no-change baseline is always available (native

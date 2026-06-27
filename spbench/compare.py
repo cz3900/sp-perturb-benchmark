@@ -61,17 +61,23 @@ def evaluate_seed(niches, eval_X=None):
             "n": int(len(obs))}
 
 
-def compare_to_baseline(niches, extra=None, eval_X=None):
-    """Niche PCC-delta (direction) and relative magnitude (`mag`) of every 2x2 cell and the
-    no-effect baseline (`null`) vs the observed niche, mean-based on the full sample.
+def compare_to_baseline(niches, extra=None, eval_X=None, annotator=None):
+    """Niche PCC-delta (direction), relative magnitude (`mag`), and — when an `annotator` is given —
+    composition `overlap` of every 2x2 cell and the no-effect baseline (`null`) vs the observed
+    niche, mean-based on the full sample.
 
     niches    : dict with 'observed', 'reference', and the four cell arrays '1'..'4'.
     extra     : optional {name: predicted-niche array} for external models (e.g. {'CONCERT': arr}),
-                scored on exactly the same PCC-delta / mag footing as the 2x2 cells.
+                scored on exactly the same PCC-delta / mag / overlap footing as the 2x2 cells.
+    annotator : optional fitted Annotator. When given, each method's predicted niche expression is
+                labelled by the SAME frozen instrument as the observed niche, and a composition
+                Overlap (1 - TV; the peer of PCC-delta, higher = better) is reported per method.
+                Clouds are annotated in their stored space; for native-space models (eval_X=None)
+                the marker annotator's frozen stats apply directly.
 
-    Returns {'pcc': {method: PCC-delta of the niche shift}, 'mag': {method: relative shift size},
-    'n': observed sample size}. pcc['null'] is NaN (flat shift) — a sanity check. PCC-delta is
-    mean-based, bounded and self-anchored, so it is robust to weak signal and variance scale.
+    Returns {'pcc': {method: PCC-delta}, 'mag': {method: relative shift size}, 'n': obs size,
+    and (annotator) 'overlap': {method: composition Overlap vs observed}}. PCC-delta is direction;
+    Overlap is cell-type composition — complementary currencies on the identical predicted niches.
     """
     obs = np.asarray(niches["observed"], float)
     ref = np.asarray(niches["reference"], float)
@@ -90,4 +96,13 @@ def compare_to_baseline(niches, extra=None, eval_X=None):
         cx = _apply_eval_X(c, eval_X)
         pcc[k] = pccm.compute(cx, obs_x, {"reference": ref_x})
         mag[k] = _mag(cx, obs_x, ref_x)
-    return {"pcc": pcc, "mag": mag, "n": int(len(obs))}
+    result = {"pcc": pcc, "mag": mag, "n": int(len(obs))}
+    if annotator is not None:
+        # Composition Overlap per method: same frozen annotator on every predicted niche AND the
+        # observed niche, so the comparison is fair. Annotated in raw (un-eval_X) cloud space.
+        from .composition import niche_composition, composition_overlap
+        cats = np.asarray(getattr(annotator, "cats_", None), object)
+        gt_comp = niche_composition(annotator.predict(obs), cats)
+        result["overlap"] = {k: composition_overlap(
+            niche_composition(annotator.predict(c), cats), gt_comp) for k, c in clouds.items()}
+    return result
