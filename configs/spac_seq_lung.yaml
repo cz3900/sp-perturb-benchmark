@@ -1,6 +1,6 @@
 # SPAC-seq lung-metastasis cohort (M001/M002/M003), Visium HD, cell-level.
 adapter: spac_seq
 adapter_kwargs:
-  path: /home/yiru/database/spatial_perturbation_collection/SPAC-seq/processed/lung.h5mu
+  path: /home/yiru/database/spatial_perturbed_processed/CRISPR_based/SPAC-seq_2026/lung.h5mu
 k: 15
 k_ref: 5

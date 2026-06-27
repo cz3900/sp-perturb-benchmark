@@ -2,6 +2,6 @@
 # Built once on the server by scripts/spac_seq/build_cells.py (min_umi=2, dom=2.0; NT=control, no-guide=none).
 adapter: spac_seq
 adapter_kwargs:
-  path: /home/yiru/database/spatial_perturbation_collection/SPAC-seq/processed/subQ.h5mu
+  path: /home/yiru/database/spatial_perturbed_processed/CRISPR_based/SPAC-seq_2026/subQ.h5mu
 k: 15
 k_ref: 5
