@@ -1,9 +1,11 @@
-"""SPAC-seq adapter (thin): reads the processed cell-level .h5ad built once on the server by
-``spac_seq_prep.build_sample`` / ``to_standard_data`` (see scripts on the server) into StandardData.
+"""SPAC-seq adapter (thin): reads the processed cell-level .h5mu built once on the server by
+`spac_seq_prep.assemble_mudata` (see build_cells.py on the server) into StandardData.
 
-The heavy bin->cell geometry + guide calling lives in ``spac_seq_prep``; this adapter only reads the
-result so the benchmark harness loads SPAC-seq like any other dataset. The processed .h5ad stores:
-X = cell x gene expression; obs[perturbation, cell_type, batch]; obsm['spatial'] = cell centroids.
+The .h5mu has two modalities: mod/rna (cell x gene expression -- the modelling X) and mod/guide
+(cell x 1520 guide UMI counts, kept for re-thresholding). This adapter reads mod/rna; obs carries
+perturbation / cell_type / batch and obsm['spatial'] = cell centroids. Like the saunders/shen
+adapters, SPAC-seq then loads like any other dataset; the heavy bin->cell geometry lives in
+spac_seq_prep.
 """
 import numpy as np
 from .base import DatasetAdapter
@@ -11,22 +13,24 @@ from ..data import StandardData
 
 
 class SpacSeqAdapter(DatasetAdapter):
-    """`path`: processed cohort .h5ad (e.g. processed/subQ.h5ad or processed/lung.h5ad)."""
+    """`path`: processed cohort .h5mu (e.g. processed/subQ.h5mu or processed/lung.h5mu)."""
 
     def __init__(self, path, name="SPAC-seq"):
         self.path = path
         self.name = name
 
     def load(self) -> StandardData:
-        import anndata as ad
-        a = ad.read_h5ad(self.path)
-        X = a.X.toarray() if hasattr(a.X, "toarray") else np.asarray(a.X)
+        import mudata
+        md = mudata.read_h5mu(self.path)
+        rna = md.mod["rna"]
+        X = rna.X.toarray() if hasattr(rna.X, "toarray") else np.asarray(rna.X)
+        name = md.uns.get("name", self.name) if getattr(md, "uns", None) is not None else self.name
         return StandardData(
             X=X.astype(np.float32),
-            coords=np.asarray(a.obsm["spatial"], dtype=float),
-            perturbation=a.obs["perturbation"].to_numpy().astype(str),
-            cell_type=a.obs["cell_type"].to_numpy().astype(str),
-            batch=a.obs["batch"].to_numpy().astype(str),
-            gene_names=list(a.var_names),
-            meta={"name": a.uns.get("name", self.name)},
+            coords=np.asarray(rna.obsm["spatial"], dtype=float),
+            perturbation=rna.obs["perturbation"].to_numpy().astype(str),
+            cell_type=rna.obs["cell_type"].to_numpy().astype(str),
+            batch=rna.obs["batch"].to_numpy().astype(str),
+            gene_names=list(rna.var_names),
+            meta={"name": name},
         )

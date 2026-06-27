@@ -233,18 +233,81 @@ def build_sample(sample_dir, spatial_meta_dir, sample_name, offset=None,
     call = call_perturbation(cell_gene, genes, min_umi=min_umi, min_dominance=min_dominance)
 
     out = dict(adata=ad, coords=coords, cell_type=cell_type, sample=sample_name,
-               perturbation=call["perturbation"], offset=offset,
-               n_bins_assigned=int((bin_cellid >= 0).sum()), n_bins=len(bin_cellid),
-               guide_names=guide_names, genes=genes)
+               perturbation=call["perturbation"], cell_guide=cell_guide, guide_names=guide_names,
+               genes=genes, offset=offset, top_umi=call["top_umi"],
+               n_genes_detected=call["n_genes_detected"],
+               n_bins_assigned=int((bin_cellid >= 0).sum()), n_bins=len(bin_cellid))
     if return_qc:
         out["qc"] = {k: call[k] for k in ("top_umi", "second_umi", "n_genes_detected", "dominance")}
-        out["cell_guide"] = cell_guide
     return out
 
 
+def _csr(M):
+    from scipy.sparse import csr_matrix
+    return M.tocsr() if hasattr(M, "tocsr") else csr_matrix(np.asarray(M))
+
+
+def assemble_mudata(samples, meta_name="SPAC-seq"):
+    """Stack per-sample build_sample() outputs into a MuData with two modalities sharing cells:
+      mod/rna   = cell x gene expression; obs[perturbation, cell_type, batch, top_umi, n_guides];
+                  obsm['spatial'] = cell centroids.
+      mod/guide = cell x guide (1520) raw aggregated UMI counts -- kept so thresholds can be re-called
+                  without re-running the bin->cell geometry.
+    obs_names are sample-prefixed (`<sample>:<cellid>`) for cross-sample uniqueness."""
+    import anndata as adlib, mudata, pandas as pd
+    from scipy.sparse import vstack as spvstack
+    ads = [s["adata"] for s in samples]
+    genes = sorted(set.intersection(*[set(a.var_names) for a in ads]))
+    names = np.concatenate([[f"{s['sample']}:{b}" for b in s["adata"].obs_names] for s in samples])
+    obs = pd.DataFrame({
+        "perturbation": np.concatenate([s["perturbation"] for s in samples]).astype(str),
+        "cell_type": np.concatenate([s["cell_type"] for s in samples]).astype(str),
+        "batch": np.concatenate([np.full(len(s["perturbation"]), s["sample"]) for s in samples]).astype(str),
+        "top_umi": np.concatenate([np.asarray(s["top_umi"]) for s in samples]).astype(float),
+        "n_guides": np.concatenate([np.asarray(s["n_genes_detected"]) for s in samples]).astype(float),
+    }, index=names)
+    rna = adlib.AnnData(X=spvstack([_csr(a[:, genes].X) for a in ads]).tocsr(),
+                        obs=obs, var=pd.DataFrame(index=genes))
+    rna.obsm["spatial"] = np.vstack([s["coords"] for s in samples])
+    gnames = list(samples[0]["guide_names"])
+    guide = adlib.AnnData(X=spvstack([_csr(s["cell_guide"]) for s in samples]).tocsr(),
+                          obs=pd.DataFrame(index=names), var=pd.DataFrame(index=gnames))
+    md = mudata.MuData({"rna": rna, "guide": guide})
+    md.uns["name"] = meta_name
+    return md
+
+
+def qc_mudata(md, min_genes=100, min_counts=200, max_mito=0.2, drop_mito_ribo=True):
+    """Cell + gene QC on the MuData's rna modality (mouse). Filters cells by min genes/counts and
+    max mitochondrial fraction (mt-*), optionally drops mito + ribosomal (Rps*/Rpl*) genes from the
+    modelling matrix. guide modality is subset to the same surviving cells. Returns (md, n_kept, n_dropped)."""
+    rna = md.mod["rna"]
+    X = rna.X
+    g = np.char.lower(np.asarray(rna.var_names, dtype=str))
+    mito = np.char.startswith(g, "mt-")
+    counts = np.asarray(X.sum(axis=1)).ravel()
+    ngenes = np.asarray((X > 0).sum(axis=1)).ravel()
+    mito_c = np.asarray(X[:, mito].sum(axis=1)).ravel() if mito.any() else np.zeros(X.shape[0])
+    mito_frac = np.where(counts > 0, mito_c / np.maximum(counts, 1), 0.0)
+    keep = (ngenes >= min_genes) & (counts >= min_counts) & (mito_frac <= max_mito)
+    md = md[keep].copy()
+    if drop_mito_ribo:
+        rna = md.mod["rna"]
+        g = np.char.lower(np.asarray(rna.var_names, dtype=str))
+        drop = mito_ribo_mask(g)
+        md.mod["rna"] = rna[:, ~drop].copy()
+    md.update()
+    return md, int(keep.sum()), int((~keep).sum())
+
+
+def mito_ribo_mask(genes_lower):
+    """Boolean mask of mouse mitochondrial (mt-*) + ribosomal (Rps*/Rpl*) genes (lower-cased input)."""
+    g = np.asarray(genes_lower, dtype=str)
+    return np.char.startswith(g, "mt-") | np.char.startswith(g, "rps") | np.char.startswith(g, "rpl")
+
+
 def to_standard_data(samples, meta_name="SPAC-seq"):
-    """Stack per-sample build_sample() outputs into one cell-level StandardData."""
-    import anndata as adlib
+    """Stack per-sample build_sample() outputs into one cell-level StandardData (in-memory, no h5mu)."""
     ads = [s["adata"] for s in samples]
     var_common = sorted(set.intersection(*[set(a.var_names) for a in ads]))
     X = np.vstack([a[:, var_common].X.toarray() if hasattr(a.X, "toarray") else a[:, var_common].X

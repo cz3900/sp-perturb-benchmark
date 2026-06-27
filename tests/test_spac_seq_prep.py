@@ -59,3 +59,59 @@ def test_assign_bins_to_cells_knn_gates_by_radius():
                      [5.0, 0.0]])    # midpoint, beyond both radii -> -1
     out, off = P.assign_bins_to_cells(bins, cell_ids, polys, offset=np.zeros(2), method="knn")
     assert out.tolist() == [7, 9, -1]
+
+
+def _fake_sample(name, n, genes, guide_names, seed):
+    import anndata as ad, pandas as pd
+    from scipy.sparse import csr_matrix
+    rng = np.random.RandomState(seed)
+    a = ad.AnnData(X=csr_matrix(rng.poisson(1, size=(n, len(genes))).astype("float32")),
+                   var=pd.DataFrame(index=genes),
+                   obs=pd.DataFrame(index=[f"cellid_{i+1:09d}-1" for i in range(n)]))
+    pert = np.array((["A", "control", "none"] * n)[:n])
+    return dict(adata=a, sample=name, perturbation=pert,
+                cell_type=np.array(["Malignant"] * n),
+                coords=(rng.rand(n, 2) * 100),
+                cell_guide=csr_matrix(rng.poisson(1, size=(n, len(guide_names))).astype("float32")),
+                guide_names=guide_names, top_umi=rng.rand(n) * 5,
+                n_genes_detected=rng.randint(0, 3, n))
+
+
+def test_assemble_mudata_roundtrip(tmp_path):
+    import pytest
+    pytest.importorskip("mudata")
+    from spbench.adapters.spac_seq import SpacSeqAdapter
+    genes = ["G1", "G2", "G3"]
+    guides = ["sgA_1", "sgA_2", "sgnon-targeting_1", "sgB_1"]
+    samples = [_fake_sample("subQ-1", 5, genes, guides, 0),
+               _fake_sample("subQ-2", 4, genes, guides, 1)]
+    md = P.assemble_mudata(samples, meta_name="SPAC-seq-test")
+    assert set(md.mod) == {"rna", "guide"}
+    assert md.mod["guide"].shape == (9, 4)          # 5+4 cells x 4 guides preserved
+    p = tmp_path / "subQ.h5mu"
+    md.write(p)
+    data = SpacSeqAdapter(str(p)).load()
+    assert data.n_cells == 9 and list(data.gene_names) == genes
+    assert data.coords.shape == (9, 2)
+    assert set(data.perturbation) <= {"A", "control", "none"}
+    assert data.meta["name"] == "SPAC-seq-test"
+
+
+def test_mito_ribo_mask():
+    g = np.char.lower(np.array(["mt-Nd1", "Rps3", "Rpl4", "Actb", "Icam1"]))
+    assert P.mito_ribo_mask(g).tolist() == [True, True, True, False, False]
+
+
+def test_qc_mudata_filters_cells_and_drops_mito_ribo():
+    import pytest
+    pytest.importorskip("mudata")
+    genes = ["mt-Nd1", "Rps3", "Actb", "Icam1"]
+    guides = ["sgA_1", "sgnon-targeting_1"]
+    samples = [_fake_sample("subQ-1", 6, genes, guides, 3)]
+    md = P.assemble_mudata(samples)
+    md2, kept, dropped = P.qc_mudata(md, min_genes=1, min_counts=1, max_mito=1.0)
+    # mito + ribo genes removed from rna; guide modality untouched
+    assert "mt-Nd1" not in list(md2.mod["rna"].var_names)
+    assert "Rps3" not in list(md2.mod["rna"].var_names)
+    assert set(md2.mod["rna"].var_names) == {"Actb", "Icam1"}
+    assert kept + dropped == 6
